@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+build/
+*.egg-info/
+*.pyc
+tools/
+dist/
+reports/*.log
+reports/*.png
+reports/dll-diagnostic.txt
+Music_Catalog_Manager_specyfikacja_GPT_Sol_6_1.md
