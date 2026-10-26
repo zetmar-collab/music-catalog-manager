@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QCoreApplication, QModelIndex, QSortFilterProxyModel, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPalette, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPalette, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -19,6 +19,7 @@ from music_catalog_manager.services.musicbrainz import MusicBrainz
 from music_catalog_manager.services.scanner import scan
 from music_catalog_manager.ui.i18n import Translator, qt_translator
 from music_catalog_manager.ui.worker import Worker
+from music_catalog_manager.ui.playback import PlaybackBar
 
 
 def tr(text):
@@ -126,6 +127,8 @@ class MainWindow(QMainWindow):
         return button
 
     def build(self):
+        if hasattr(self, 'playback'):
+            self.playback.release()
         central = QWidget()
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
@@ -190,7 +193,13 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(0, 210)
         self.table.setColumnWidth(1, 160)
         self.table.selectionModel().selectionChanged.connect(self.details)
-        self.table.doubleClicked.connect(self.edit_tags)
+        self.table.doubleClicked.connect(self.play_index)
+        self.play_shortcut = QShortcut(QKeySequence('Space'), self.table)
+        self.play_shortcut.setContext(Qt.WidgetShortcut)
+        self.play_shortcut.activated.connect(lambda: self.playback.toggle())
+        self.enter_shortcut = QShortcut(QKeySequence('Return'), self.table)
+        self.enter_shortcut.setContext(Qt.WidgetShortcut)
+        self.enter_shortcut.activated.connect(lambda: self.play_index(self.table.currentIndex()))
         self.search.textChanged.connect(self.update_filter)
         content.addWidget(self.table, 1)
         bottom = QHBoxLayout()
@@ -215,6 +224,8 @@ class MainWindow(QMainWindow):
         detail.addWidget(self.detail_text)
         splitter.addWidget(right)
         splitter.setSizes([160, 930, 270])
+        self.playback = PlaybackBar(self.store, self.selected, self.visible_tracks, self)
+        outer.addWidget(self.playback)
         status = QHBoxLayout()
         outer.addLayout(status)
         self.status = QLabel(tr('Ready'))
@@ -242,7 +253,14 @@ class MainWindow(QMainWindow):
         app.setStyleSheet('QPushButton{padding:8px 10px} QLineEdit,QComboBox{padding:6px} QListWidget{padding:8px} QListWidget::item{padding:10px 3px} QTableView{gridline-color:rgba(128,128,128,35)} QHeaderView::section{padding:7px}')
 
     def selected(self):
-        return [self.model.rows[self.proxy.mapToSource(i).row()] for i in self.table.selectionModel().selectedRows()]
+        return [self.model.rows[self.proxy.mapToSource(i).row()] for i in sorted(self.table.selectionModel().selectedRows(), key=lambda index: index.row())]
+
+    def visible_tracks(self):
+        return [self.model.rows[self.proxy.mapToSource(self.proxy.index(i, 0)).row()] for i in range(self.proxy.rowCount())]
+
+    def play_index(self, index):
+        if index.isValid():
+            self.playback.play_track(self.model.rows[self.proxy.mapToSource(index).row()])
 
     def refresh(self):
         rows = self.store.tracks()
@@ -349,9 +367,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(buttons)
         return dialog.exec() == QDialog.Accepted
 
-    def start(self, function, done=None):
+    def start(self, function, done=None, lock_playback=False):
         if self.worker:
             return
+        self.playback.set_busy(lock_playback)
         self.worker = Worker(function, self)
         self.pending_result = None
         self.done_callback = done or (lambda _: self.refresh())
@@ -364,7 +383,10 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self.error)
         self.worker.result.connect(self.receive_result)
         self.worker.finished.connect(self.finished)
-        self.worker.start()
+        if lock_playback:
+            self.playback.when_released(self.worker.start)
+        else:
+            self.worker.start()
 
     def receive_result(self, result):
         self.pending_result = (result,)
@@ -377,6 +399,7 @@ class MainWindow(QMainWindow):
             button.setEnabled(True)
         self.progress.hide()
         self.cancel_button.setEnabled(False)
+        self.playback.set_busy(False)
         self.refresh()
         result, callback = self.pending_result, self.done_callback
         self.pending_result = None
@@ -489,7 +512,7 @@ class MainWindow(QMainWindow):
         def done(errors):
             if errors:
                 self.error('\n'.join(errors))
-        self.start(work, done)
+        self.start(work, done, lock_playback=disk)
 
     def rename_tracks(self):
         if self.worker:
@@ -502,8 +525,7 @@ class MainWindow(QMainWindow):
             def action():
                 plan = rename.preview(tracks, template)
                 if self.preview('Preview changes', '\n'.join(str(a) + ' → ' + b.name for _, a, b in plan)):
-                    rename.execute(self.store, plan)
-                    self.refresh()
+                    self.start(lambda cancel, progress: rename.execute(self.store, plan), lock_playback=True)
             self.guarded(action)
 
     def internet(self, action, done):
@@ -604,7 +626,7 @@ class MainWindow(QMainWindow):
                 manifest = backup.inspect(path)
                 summary = tr('Replace current library? A safety backup will be created. Audio files are not restored.') + '\n\n' + json.dumps(manifest, indent=2)
                 if self.preview('Restore backup', summary):
-                    self.start(lambda cancel, progress: backup.restore(self.store, path), lambda _: self.refresh())
+                    self.start(lambda cancel, progress: backup.restore(self.store, path), lambda _: self.refresh(), lock_playback=True)
             self.guarded(action)
 
     def navigate(self, index):
@@ -633,8 +655,8 @@ class MainWindow(QMainWindow):
         if ok:
             target = QFileDialog.getExistingDirectory(self, tr('New location'))
             if target and self.confirm(choice + ' → ' + target):
-                self.guarded(lambda: self.store.relink(next(r['id'] for r in roots if r['path'] == choice), target))
-                self.refresh()
+                root_id = next(r['id'] for r in roots if r['path'] == choice)
+                self.start(lambda cancel, progress: self.store.relink(root_id, target), lock_playback=True)
 
     def settings(self):
         dialog = QDialog(self)
@@ -705,7 +727,7 @@ class MainWindow(QMainWindow):
                         errors.append(str(exc))
                         self.store.log('write_error', track['id'], after=str(exc))
                 return errors
-            self.start(work, lambda errors: self.error('\n'.join(errors)) if errors else None)
+            self.start(work, lambda errors: self.error('\n'.join(errors)) if errors else None, lock_playback=True)
 
     def open_location(self):
         tracks = self.selected()
@@ -739,6 +761,7 @@ class MainWindow(QMainWindow):
         self.preview('History', json.dumps(rows, ensure_ascii=False, indent=2))
 
     def closeEvent(self, event):
+        self.playback.release()
         if self.worker:
             self.cancel()
             event.ignore()

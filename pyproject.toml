@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-catalog-manager"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local music library catalog for Windows"
 requires-python = ">=3.12,<3.13"
 license = "GPL-3.0-or-later"
-dependencies = ["PySide6-Essentials==6.12.0", "mutagen==1.48.1", "httpx==0.28.1", "Pillow==13.0.0"]
+dependencies = ["PySide6-Essentials==6.12.0", "PySide6-Addons==6.12.0", "mutagen==1.48.1", "httpx==0.28.1", "Pillow==13.0.0"]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1", "pyinstaller==6.22.3"]

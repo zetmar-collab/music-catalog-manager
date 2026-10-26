@@ -45,3 +45,53 @@ def verify_audio(source):
     assert all(file_hash(path) == before for path, before in originals.items())
     return {'scanned_formats': sorted(p.suffix for p in files), 'written_formats': sorted(written),
             'backup_restore': True, 'originals_unchanged': True}
+
+
+def verify_playback(source):
+    """Decode synthetic fixtures through Qt Multimedia with the output muted."""
+    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtMultimedia import QAudioBufferOutput, QMediaPlayer
+    from music_catalog_manager.ui.playback import PlaybackBar
+    reports = []
+    with tempfile.TemporaryDirectory(prefix='mcm-playback-') as folder:
+        store = Store(folder)
+        scan(store, store.add_root(source))
+        bar = PlaybackBar(store, lambda: [], lambda: [])
+        bar.volume.setValue(0)
+        if not bar.ensure_player():
+            raise RuntimeError(bar.last_error)
+        output = QAudioBufferOutput(bar.player)
+        bar.player.setAudioBufferOutput(output)
+        for track in store.tracks():
+            report = {'format': track['format'], 'decoded_samples': 0, 'ended': False, 'errors': []}
+            loop = QEventLoop()
+            def buffer_ready(buffer):
+                report['decoded_samples'] += buffer.sampleCount()
+            def status_changed(status):
+                if status == QMediaPlayer.MediaStatus.EndOfMedia:
+                    report['ended'] = True
+                    loop.quit()
+            def failed(error, detail):
+                report['errors'].append(detail)
+                loop.quit()
+            output.audioBufferReceived.connect(buffer_ready)
+            bar.player.mediaStatusChanged.connect(status_changed)
+            bar.player.errorOccurred.connect(failed)
+            timeout = QTimer()
+            timeout.setSingleShot(True)
+            timeout.timeout.connect(loop.quit)
+            timeout.start(5000)
+            bar.play_track(track)
+            loop.exec()
+            timeout.stop()
+            report['passed'] = report['decoded_samples'] > 0 and report['ended'] and not report['errors']
+            reports.append(report)
+            output.audioBufferReceived.disconnect(buffer_ready)
+            bar.player.mediaStatusChanged.disconnect(status_changed)
+            bar.player.errorOccurred.disconnect(failed)
+            bar.stop()
+        bar.release()
+        # Deferred deletion belongs to the caller's event loop. Waiting in a
+        # nested loop here deadlocks when this diagnostic runs from a QTimer.
+        bar.when_released(bar.deleteLater)
+    return {'passed': bool(reports) and all(r['passed'] for r in reports), 'formats': reports, 'audible_output_verified': False}

@@ -5,7 +5,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1] / 'third_party_licenses'
 root.mkdir(exist_ok=True)
 inventory = []
-for name in ('PySide6-Essentials', 'shiboken6', 'mutagen', 'httpx', 'httpcore', 'anyio', 'certifi', 'idna', 'h11', 'Pillow', 'typing_extensions'):
+for name in ('PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'mutagen', 'httpx', 'httpcore', 'anyio', 'certifi', 'idna', 'h11', 'Pillow', 'typing_extensions'):
     dist = metadata.distribution(name)
     inventory.append({'name': name, 'version': dist.version, 'license': dist.metadata.get('License-Expression') or dist.metadata.get('License'), 'homepage': dist.metadata.get('Home-page')})
     for file in dist.files or []:

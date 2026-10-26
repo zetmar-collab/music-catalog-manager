@@ -10,14 +10,17 @@ def main():
     parser.add_argument('--smoke-test', action='store_true')
     parser.add_argument('--screenshot', type=Path)
     parser.add_argument('--verify-audio', type=Path)
+    parser.add_argument('--verify-playback', type=Path)
     args = parser.parse_args()
     from PySide6.QtCore import QTimer, QLockFile
     from PySide6.QtGui import QFont
     from PySide6.QtWidgets import QApplication, QMessageBox
     from music_catalog_manager.database.store import Store
+    from music_catalog_manager import __version__
     from music_catalog_manager.ui.window import MainWindow
     app = QApplication(sys.argv[:1])
     app.setApplicationName('Music Catalog Manager')
+    app.setApplicationVersion(__version__)
     app.setFont(QFont('Segoe UI', 10))
     args.profile.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(args.profile / 'application.lock'))
@@ -28,19 +31,20 @@ def main():
     store = Store(args.profile)
     window = MainWindow(store)
     window.show()
-    if args.verify_audio:
+    if args.verify_audio or args.verify_playback:
         def acceptance():
             import json
             import traceback
-            from music_catalog_manager.diagnostics import verify_audio
+            from music_catalog_manager.diagnostics import verify_audio, verify_playback
             try:
-                result = verify_audio(args.verify_audio)
-                result['passed'] = True
-                code = 0
+                result = verify_playback(args.verify_playback) if args.verify_playback else verify_audio(args.verify_audio)
+                result.setdefault('passed', True)
+                code = 0 if result['passed'] else 1
             except Exception:
                 result = {'passed': False, 'error': traceback.format_exc()}
                 code = 1
-            (args.profile / 'acceptance-result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+            report_name = 'playback-result.json' if args.verify_playback else 'acceptance-result.json'
+            (args.profile / report_name).write_text(json.dumps(result, indent=2), encoding='utf-8')
             app.exit(code)
         QTimer.singleShot(100, acceptance)
     if args.smoke_test:
@@ -52,6 +56,7 @@ def main():
                     window.table.selectRow(0)
                 window.grab().save(str(args.screenshot))
             (args.profile / 'smoke-result.json').write_text(json.dumps({'window_visible': window.isVisible(),
+                'version': __version__, 'playback_controls': hasattr(window, 'playback'),
                 'add_folder_label': window.action_buttons[0].text(), 'schema': 1, 'icon_loaded': not window.windowIcon().isNull()}), encoding='utf-8')
             app.quit()
         QTimer.singleShot(1500, smoke)

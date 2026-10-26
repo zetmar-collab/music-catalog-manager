@@ -1,19 +1,19 @@
-# Music Catalog Manager 0.1.0
+# Music Catalog Manager 0.2.0
 
-Lokalny katalog muzyki dla Windows 10/11 x64, Python 3.12 i Qt/PySide6. Nie wymaga konta ani dostępu do internetu do katalogowania. Nie pobiera muzyki i nie zawiera odtwarzacza.
+Lokalny katalog muzyki z odtwarzaczem dla Windows 10/11 x64, Python 3.12 i Qt/PySide6. Nie wymaga konta ani dostępu do internetu do katalogowania i odtwarzania własnych plików. Nie pobiera muzyki.
 
 ## Pobierz
 
-- [Instalator Windows 0.1.0](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.1.0/MusicCatalogManager-0.1.0-Setup.exe)
-- [Wersja przenośna ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.1.0/MusicCatalogManager-0.1.0-portable.zip)
-- [Kod źródłowy ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.1.0/MusicCatalogManager-0.1.0-source.zip)
-- [Wydanie i sumy SHA-256](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.1.0)
+- [Instalator Windows 0.2.0](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.2.0/MusicCatalogManager-0.2.0-Setup.exe)
+- [Wersja przenośna ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.2.0/MusicCatalogManager-0.2.0-portable.zip)
+- [Kod źródłowy ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.2.0/MusicCatalogManager-0.2.0-source.zip)
+- [Wydanie i sumy SHA-256](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.2.0)
 
 ![Music Catalog Manager — biblioteka muzyczna, okładka i szczegóły utworu](docs/screenshot.png)
 
 ## Uruchomienie
 
-Gotowy program: `dist\MusicCatalogManager\MusicCatalogManager.exe`. Cały folder jest potrzebny do uruchomienia wersji przenośnej. Instalator: `dist\MusicCatalogManager-0.1.0-Setup.exe`.
+Gotowy program: `dist\MusicCatalogManager\MusicCatalogManager.exe`. Cały folder jest potrzebny do uruchomienia wersji przenośnej. Instalator: `dist\MusicCatalogManager-0.2.0-Setup.exe`. Aktualizacja zachowuje dotychczasową bibliotekę i ustawienia; nie zmienia schematu bazy.
 
 Ze źródeł, w PowerShell w katalogu projektu:
 
@@ -41,6 +41,20 @@ Dane domyślnie trafiają do `%LOCALAPPDATA%\MusicCatalogManager`. Kod i pliki i
 6. **Cofnij edycję w bazie** cofa jeden ostatni zapis edycji, również po restarcie. Nie cofa plików audio. Kopie oryginalnych audio są w `audio-backups` w profilu, z unikalnym prefiksem i oryginalną nazwą; przywracaj je ręcznie po zamknięciu programu i sprawdzeniu ścieżki. W edytorze częściowego zapisu można wyłączyć wykonywanie tych kopii.
 7. **Zmień nazwę**: pojedynczą nazwę wpisz jako zwykły tekst bez rozszerzenia. Dostępne są pola tagów oraz `{track:02}`, np. `{artist} - {title}`. Podgląd jest obowiązkowy. Znak niedozwolony zastępuje `_`; nazwy systemowe otrzymują prefiks. Kolizja przerywa całą operację przed pierwszym ruchem. Pliki pozostają w swoich folderach i zachowują rozszerzenia.
 8. **Eksportuj** zapisuje obecnie widoczną listę do JSON lub CSV UTF-8. **Historia** pokazuje ostatnie 200 operacji i szczegóły błędów.
+
+## Odtwarzanie utworów
+
+Dwuklik w tabeli albo przycisk **Odtwórz** uruchamia lokalny plik wskazany przez rekord bazy. Same dane audio pozostają na dysku. Dostępne są **Pauza**, **Zatrzymaj**, **Poprzedni**, **Następny**, suwak przewijania, licznik czasu i zapamiętywana głośność. W tabeli działa spacja oraz Enter; skróty nie przechwytują pisania w wyszukiwarce. Edytor tagów otwiera się przyciskiem **Edytuj tagi**.
+
+Po rozpoczęciu odtwarzania przycisk **Odtwórz/Pauza** oraz spacja sterują aktualnym utworem. Aby uruchomić inną zaznaczoną pozycję, użyj dwukliku albo Enter.
+
+![Pasek odtwarzania Music Catalog Manager](docs/playback.png)
+
+Przy zaznaczeniu kilku utworów odtwarzana jest kolejka zaznaczonych pozycji w kolejności tabeli. Przy jednym zaznaczeniu kolejka obejmuje aktualnie widoczną, przefiltrowaną i posortowaną listę, zaczynając od wybranego utworu. Na końcu program zatrzymuje się. Zmiana filtrów nie zmienia już utworzonej kolejki; uruchom wybrany utwór ponownie, aby utworzyć nową.
+
+Brak pliku lub błąd dekodera wyświetla komunikat w pasku odtwarzania. Katalogowanie nadal działa. Przed operacją zmieniającą audio, nazwy lub lokalizacje program zwalnia plik i blokuje odtwarzanie do zakończenia operacji. Odtwarzacz nie zapisuje tagów ani nie modyfikuje audio.
+
+Qt Multimedia i jego biblioteki FFmpeg są dołączone do pakietu. Nie trzeba instalować programu FFmpeg osobno do odtwarzania. Testy potwierdzają dekodowanie syntetycznych MP3, FLAC, M4A, OGG/Vorbis, OPUS, WAV, WMA i AIFF; nietypowe kodeki, DRM i każdy wariant kontenera nie są objęte gwarancją. WMA nadal pozostaje tylko do odczytu i odtwarzania, bez zapisu tagów.
 
 ## Metadane i okładki
 
@@ -85,7 +99,7 @@ PyInstaller tworzy folder z EXE i dynamicznymi bibliotekami Qt. Inno Setup dodaj
 
 ## Weryfikacja i granice wersji
 
-Raport etapów: `reports/IMPLEMENTATION.md`. Raport maszynowy: `reports/pytest.xml`. Testy:
+Raport odtwarzacza 0.2.0: [reports/PLAYBACK.md](reports/PLAYBACK.md). Pierwotny raport etapów 0.1.0: `reports/IMPLEMENTATION.md`. Raport maszynowy: `reports/pytest.xml`. Testy:
 
 ```powershell
 .venv\Scripts\python.exe -m pytest -q --junitxml=reports\pytest.xml

@@ -6,6 +6,12 @@
     "homepage": null
   },
   {
+    "name": "PySide6-Addons",
+    "version": "6.12.0",
+    "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+    "homepage": null
+  },
+  {
     "name": "shiboken6",
     "version": "6.12.0",
     "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",

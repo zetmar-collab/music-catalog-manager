@@ -33,6 +33,14 @@ try {
     if (-not $SmokeProcess.WaitForExit(30000)) { Stop-Process -Id $SmokeProcess.Id; throw 'EXE startup did not finish within 30 seconds' }
     $SmokeProcess.Refresh()
     if ($SmokeProcess.ExitCode -ne 0) { throw 'EXE smoke test failed' }
+    & $PythonExe scripts\make_playback_fixture.py
+    if ($LASTEXITCODE -ne 0) { throw 'Playback fixture generation failed' }
+    $PlaybackProcess = Start-Process -FilePath 'dist\MusicCatalogManager\MusicCatalogManager.exe' -ArgumentList @('--verify-playback', 'build\playback-smoke-audio', '--profile', ('"' + $SmokeProfile + '"')) -WindowStyle Hidden -PassThru
+    if (-not $PlaybackProcess.WaitForExit(30000)) { Stop-Process -Id $PlaybackProcess.Id; throw 'Packaged playback timeout' }
+    $PlaybackProcess.Refresh()
+    if ($PlaybackProcess.ExitCode -ne 0) { throw 'Packaged playback failed' }
+    $PlaybackReport = Get-Content -LiteralPath (Join-Path $SmokeProfile 'playback-result.json') -Raw | ConvertFrom-Json
+    if (-not $PlaybackReport.passed) { throw 'Packaged playback verification failed' }
     if (-not $SkipInstaller) {
         if (-not $InnoCompiler) {
             $Candidates = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", (Join-Path $ProjectRoot 'tools\InnoSetup\ISCC.exe'))

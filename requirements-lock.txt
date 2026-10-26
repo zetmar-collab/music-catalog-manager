@@ -41,8 +41,12 @@ pyinstaller==6.22.3
     # via music-catalog-manager (pyproject.toml)
 pyinstaller-hooks-contrib==2026.9
     # via pyinstaller
-pyside6-essentials==6.12.0
+pyside6-addons==6.12.0
     # via music-catalog-manager (pyproject.toml)
+pyside6-essentials==6.12.0
+    # via
+    #   music-catalog-manager (pyproject.toml)
+    #   pyside6-addons
 pytest==9.1.1
     # via music-catalog-manager (pyproject.toml)
 pywin32-ctypes==0.2.3

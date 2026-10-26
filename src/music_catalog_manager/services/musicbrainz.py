@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from music_catalog_manager import __version__
 
 
 class Cancelled(Exception):
@@ -23,7 +24,7 @@ class MusicBrainz:
         self.cache.mkdir(exist_ok=True)
         self.cancel = cancel or threading.Event()
         self.client = client or httpx.Client(timeout=15, follow_redirects=True,
-                    headers={'User-Agent': f'MusicCatalogManager/0.1.0 ({contact})'})
+                    headers={'User-Agent': f'MusicCatalogManager/{__version__} ({contact})'})
         self.owns_client = client is None
 
     def close(self):

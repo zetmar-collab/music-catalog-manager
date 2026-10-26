@@ -1,5 +1,7 @@
 # Architektura
 
+Od wersji 0.2.0 `ui/playback.py` zawiera odtwarzacz Qt Multimedia (`QMediaPlayer` + `QAudioOutput`), inicjalizowany dopiero na żądanie. Odczytuje ścieżki z rekordów SQLite i tworzy kolejkę z zaznaczenia albo aktualnego widoku tabeli. Nie zmienia schematu bazy; głośność jest zwykłym ustawieniem. Podczas zapisu audio, zmiany nazw, relinkowania i przywracania bazy odtwarzacz zostaje wyłączony. Worker czeka na zakończenie usuwania backendu Qt na pętli zdarzeń, aby Windows zwolnił uchwyt pliku. Dekodery nie są wymagane do samego skanowania.
+
 ```text
 main.py — profil, blokada instancji, start Qt
   └─ ui/window.py — biblioteka, filtry, szczegóły i dialogi

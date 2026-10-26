@@ -1,0 +1,62 @@
+{
+  "passed": true,
+  "formats": [
+    {
+      "format": "AIFF",
+      "decoded_samples": 4410,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "FLAC",
+      "decoded_samples": 4410,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "M4A",
+      "decoded_samples": 4410,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "MP3",
+      "decoded_samples": 4410,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "OGG",
+      "decoded_samples": 4282,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "OPUS",
+      "decoded_samples": 4800,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "WAV",
+      "decoded_samples": 4410,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "format": "WMA",
+      "decoded_samples": 4096,
+      "ended": true,
+      "errors": [],
+      "passed": true
+    }
+  ],
+  "audible_output_verified": false
+}
