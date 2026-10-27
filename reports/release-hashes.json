@@ -1,14 +1,22 @@
-[
-  {
-    "File": "MusicCatalogManager-0.2.0-Setup.exe",
-    "Hash": "EB1210AC4E724504EAAE61126F2D22DBB90FD6AE9A177D1B7DCED186690CECEF"
+{
+  "MusicCatalogManager-0.4.0-Setup.exe": {
+    "bytes": 47956424,
+    "sha256": "242da46633cfce6a02dcd6c7ab4070dc0b4ffa0ad6bd4e5d13ad19b3d853b7b7"
   },
-  {
-    "File": "MusicCatalogManager-0.2.0-portable.zip",
-    "Hash": "0EF791C27D86ECA04CDF8359ED41ACD388ED1266F331E0A53D302E777871309C"
+  "MusicCatalogManager-0.4.0-portable.zip": {
+    "bytes": 67216176,
+    "sha256": "ac92b6b79f3fb96fa2e61fb9860e9bd7492bd1f70f187496d448697d977c187d"
   },
-  {
-    "File": "MusicCatalogManager-0.2.0-source.zip",
-    "Hash": "DA02C67B9344919384EAAC6A372F897098C8559FE4BE8AD9F17BD7BD7AF01DDE"
+  "MusicCatalogManager-0.4.0-source.zip": {
+    "bytes": 719946,
+    "sha256": "feb89f212f0af131e22d48df4277367dca7216b8a79fcba217f6677c1518b286"
+  },
+  "MusicCatalogManager-0.4.0-Help-PL.html": {
+    "bytes": 11421,
+    "sha256": "a228c366917e2e2d56938552172ca4a97bf6f02230da54c294acfdbb1506f6a3"
+  },
+  "MusicCatalogManager-0.4.0-Help-EN.html": {
+    "bytes": 10570,
+    "sha256": "44d82d13625aad5b7d4054b59d642c1a0cb219c96216195c39754665d7170af5"
   }
-]
+}

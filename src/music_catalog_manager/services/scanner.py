@@ -12,10 +12,13 @@ from music_catalog_manager.services import metadata
 from music_catalog_manager.services.artwork import cache_image
 
 
-def file_hash(path):
+def file_hash(path, cancel=None):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         for block in iter(lambda: f.read(1024 * 1024), b''):
+            if cancel is not None and cancel.is_set():
+                from music_catalog_manager.services.musicbrainz import Cancelled
+                raise Cancelled()
             h.update(block)
     return h.hexdigest()
 
@@ -62,12 +65,12 @@ def scan(store, root_id, cancel=None, progress=None, hashes=False):
                         if row and row['mtime'] == st.st_mtime_ns and row['size'] == st.st_size:
                             db.execute('UPDATE tracks SET path=?,root_id=?,seen=?,available=1 WHERE id=?', (norm, root_id, token, row['id']))
                             if hashes and not row['sha256']:
-                                db.execute('UPDATE tracks SET sha256=? WHERE id=?', (file_hash(path), row['id']))
+                                db.execute('UPDATE tracks SET sha256=? WHERE id=?', (file_hash(path, cancel), row['id']))
                             stats['skipped'] += 1
                             progress(stats.copy())
                             continue
                     data = metadata.read(path)
-                    digest = file_hash(path) if hashes else None
+                    digest = file_hash(path, cancel) if hashes else None
                     with store.connection() as db:
                         if not row and digest:
                             candidates = db.execute('SELECT * FROM tracks WHERE sha256=?', (digest,)).fetchall()
@@ -89,6 +92,8 @@ def scan(store, root_id, cancel=None, progress=None, hashes=False):
                         except Exception as exc:
                             error(exc)
                 except Exception as exc:
+                    if cancel.is_set():
+                        break
                     error(exc)
                 progress(stats.copy())
         if not cancel.is_set():

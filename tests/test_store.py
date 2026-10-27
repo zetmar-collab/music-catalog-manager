@@ -9,7 +9,7 @@ def test_schema_settings(tmp_path):
     with store.connection() as db:
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert db.execute('PRAGMA foreign_keys').fetchone()[0] == 1
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 1
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 2
 
 
 def test_undo(tmp_path):

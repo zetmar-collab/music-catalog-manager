@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-catalog-manager"
-version = "0.2.0"
+version = "0.4.0"
 description = "Local music library catalog for Windows"
 requires-python = ">=3.12,<3.13"
 license = "GPL-3.0-or-later"

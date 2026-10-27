@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from music_catalog_manager.paths import windows_path, plain_path
@@ -37,7 +38,7 @@ class Store:
     def migrate(self):
         with self.connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise ValueError('Unsupported database schema')
             if version == 0:
                 db.executescript('''
@@ -57,6 +58,21 @@ class Store:
                   before_data TEXT,after_data TEXT,created TEXT DEFAULT CURRENT_TIMESTAMP,undone INTEGER DEFAULT 0);
                 CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
                 PRAGMA user_version=1;
+                ''')
+            if version < 2:
+                db.executescript('''
+                BEGIN IMMEDIATE;
+                ALTER TABLE operation_history ADD COLUMN operation_id TEXT;
+                CREATE INDEX history_operation ON operation_history(operation_id);
+                CREATE TABLE audio_backups(id INTEGER PRIMARY KEY,track_id INTEGER REFERENCES tracks(id),
+                  original_path TEXT NOT NULL,backup_path TEXT NOT NULL,sha256 TEXT NOT NULL,
+                  created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                CREATE TABLE playlists(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE);
+                CREATE TABLE playlist_tracks(playlist_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE,
+                  track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE,position INTEGER NOT NULL,
+                  PRIMARY KEY(playlist_id,position));
+                PRAGMA user_version=2;
+                COMMIT;
                 ''')
 
     def setting(self, key, default=None):
@@ -94,9 +110,10 @@ class Store:
         result['tags'] = json.loads(result['tags'])
         return result
 
-    def edit(self, ids, changes):
+    def edit(self, ids, changes, operation_id=None):
         if set(changes) - set(FIELDS) - {'musicbrainz_recordingid', 'musicbrainz_albumid', 'isrc'}:
             raise ValueError('Unknown field')
+        operation_id = operation_id or uuid.uuid4().hex
         with self.connection() as db:
             for tid in ids:
                 row = db.execute('SELECT tags FROM tracks WHERE id=?', (tid,)).fetchone()
@@ -105,17 +122,25 @@ class Store:
                 tags.update(changes)
                 after = json.dumps(tags, ensure_ascii=False)
                 db.execute('UPDATE tracks SET tags=?,dirty=1 WHERE id=?', (after, tid))
-                db.execute('INSERT INTO operation_history(kind,track_id,before_data,after_data) VALUES(?,?,?,?)',
-                           ('edit', tid, before, after))
+                db.execute('INSERT INTO operation_history(kind,track_id,before_data,after_data,operation_id) VALUES(?,?,?,?,?)',
+                           ('edit', tid, before, after, operation_id))
+        return operation_id
 
     def undo(self):
         with self.connection() as db:
             row = db.execute("SELECT * FROM operation_history WHERE kind='edit' AND undone=0 ORDER BY id DESC LIMIT 1").fetchone()
             if not row:
                 return False
-            db.execute('UPDATE tracks SET tags=?,dirty=1 WHERE id=?', (row['before_data'], row['track_id']))
-            db.execute('UPDATE operation_history SET undone=1 WHERE id=?', (row['id'],))
+            rows = db.execute("SELECT * FROM operation_history WHERE kind='edit' AND undone=0 AND operation_id=? ORDER BY id DESC", (row['operation_id'],)).fetchall() if row['operation_id'] else [row]
+            for item in rows:
+                db.execute('UPDATE tracks SET tags=?,dirty=1 WHERE id=?', (item['before_data'], item['track_id']))
+                db.execute('UPDATE operation_history SET undone=1 WHERE id=?', (item['id'],))
         return True
+
+    def undo_count(self):
+        with self.connection() as db:
+            row = db.execute("SELECT id,operation_id FROM operation_history WHERE kind='edit' AND undone=0 ORDER BY id DESC LIMIT 1").fetchone()
+            return db.execute("SELECT COUNT(DISTINCT track_id) FROM operation_history WHERE kind='edit' AND undone=0 AND operation_id=?", (row['operation_id'],)).fetchone()[0] if row and row['operation_id'] else int(row is not None)
 
     def log(self, kind, tid=None, before=None, after=None):
         with self.connection() as db:

@@ -90,5 +90,10 @@ def test_real_window_scans_in_background_and_cancels(tmp_path, audio_factory, mo
     loop.exec()
     app.processEvents()
     assert len(store.tracks()) == 30
+    from PySide6.QtTest import QTest
+    deadline = time.monotonic() + 5
+    while window.loading_library and time.monotonic() < deadline:
+        QTest.qWait(10)
+        time.sleep(0.001)
     assert window.proxy.rowCount() == 30
     window.close()

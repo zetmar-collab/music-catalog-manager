@@ -1,0 +1,29 @@
+[
+  {
+    "tracks": 10000,
+    "loaded_rows": 250,
+    "page_ms": 53.0,
+    "search_ms": 53.3,
+    "matching_rows": 275,
+    "facets_ms": 39.9,
+    "page_python_peak_kib": 351.7
+  },
+  {
+    "tracks": 50000,
+    "loaded_rows": 250,
+    "page_ms": 188.7,
+    "search_ms": 213.9,
+    "matching_rows": 1375,
+    "facets_ms": 177.9,
+    "page_python_peak_kib": 350.0
+  },
+  {
+    "tracks": 100000,
+    "loaded_rows": 250,
+    "page_ms": 382.2,
+    "search_ms": 442.8,
+    "matching_rows": 2750,
+    "facets_ms": 390.0,
+    "page_python_peak_kib": 347.8
+  }
+]

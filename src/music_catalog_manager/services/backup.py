@@ -12,11 +12,17 @@ from pathlib import Path, PurePosixPath
 SCHEMA = 1
 
 
+def check_cancel(cancel):
+    if cancel is not None and cancel.is_set():
+        from music_catalog_manager.services.musicbrainz import Cancelled
+        raise Cancelled()
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def inspect(path):
+def inspect(path, cancel=None):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)) or len(names) > 100_000:
@@ -37,6 +43,7 @@ def inspect(path):
         if set(names) != set(manifest['files']) | {'manifest.json'}:
             raise ValueError('Manifest mismatch')
         for name, checksum in manifest['files'].items():
+            check_cancel(cancel)
             data = archive.read(name)
             if digest(data) != checksum:
                 raise ValueError('Checksum mismatch: ' + name)
@@ -45,7 +52,8 @@ def inspect(path):
         return manifest
 
 
-def create(store, destination):
+def create(store, destination, cancel=None, progress=None):
+    check_cancel(cancel)
     destination = Path(destination)
     if destination.exists():
         raise FileExistsError(str(destination))
@@ -53,9 +61,10 @@ def create(store, destination):
     with tempfile.TemporaryDirectory(dir=store.profile) as folder:
         snapshot = Path(folder) / 'library.sqlite'
         with store.connection() as db, closing(sqlite3.connect(snapshot)) as out:
-            db.backup(out)
+            db.backup(out, pages=256, progress=lambda *_: check_cancel(cancel))
         files = {'library.sqlite': snapshot.read_bytes()}
         for path in store.cache.glob('*.jpg'):
+            check_cancel(cancel)
             files['artwork/' + path.name] = path.read_bytes()
         manifest = {'schema': SCHEMA, 'created': datetime.now(timezone.utc).isoformat(),
                     'audio_included': False, 'files': {name: digest(data) for name, data in files.items()}}
@@ -64,9 +73,13 @@ def create(store, destination):
         try:
             with zipfile.ZipFile(temp_name, 'w', zipfile.ZIP_DEFLATED) as archive:
                 for name, data in files.items():
+                    check_cancel(cancel)
                     archive.writestr(name, data)
+                    if progress:
+                        progress({'files': len(archive.namelist()), 'total': len(files)})
                 archive.writestr('manifest.json', json.dumps(manifest))
-            inspect(temp_name)
+            inspect(temp_name, cancel)
+            check_cancel(cancel)
             # No overwrite even when a destination appears during backup creation.
             if os.name == 'nt':
                 os.rename(temp_name, destination)
@@ -77,22 +90,25 @@ def create(store, destination):
     return manifest
 
 
-def restore(store, path):
-    manifest = inspect(path)
+def restore(store, path, cancel=None, progress=None):
+    manifest = inspect(path, cancel)
     safety = store.profile / ('before-restore-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.zip')
-    create(store, safety)
+    create(store, safety, cancel, progress)
     with tempfile.TemporaryDirectory(dir=store.profile) as folder:
         staging = Path(folder)
         with zipfile.ZipFile(path) as archive:
             for name in manifest['files']:
+                check_cancel(cancel)
                 target = staging.joinpath(*PurePosixPath(name).parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.read(name))
         candidate = staging / 'library.sqlite'
         with closing(sqlite3.connect(candidate)) as db:
-            if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok' or db.execute('PRAGMA user_version').fetchone()[0] != SCHEMA:
+            if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok' or db.execute('PRAGMA user_version').fetchone()[0] not in (1, 2):
                 raise ValueError('Invalid SQLite database')
             expected = {'tracks', 'library_roots', 'settings', 'artwork', 'scan_jobs', 'operation_history'}
+            if db.execute('PRAGMA user_version').fetchone()[0] == 2:
+                expected |= {'audio_backups', 'playlists', 'playlist_tracks'}
             actual = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not expected <= actual or db.execute('PRAGMA foreign_key_check').fetchone():
                 raise ValueError('Invalid database structure')
@@ -101,7 +117,10 @@ def restore(store, path):
                     raise ValueError('Invalid artwork reference')
         # Cache is content-addressed: adding new images cannot invalidate existing references.
         for image in (staging / 'artwork').glob('*.jpg') if (staging / 'artwork').exists() else []:
+            check_cancel(cancel)
             shutil.copy2(image, store.cache / image.name)
+        check_cancel(cancel)
         os.replace(candidate, store.path)
+    store.migrate()
     store.mark_availability()
     return safety

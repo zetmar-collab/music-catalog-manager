@@ -46,7 +46,7 @@ def preview(tracks, template):
     return result
 
 
-def execute(store, plan):
+def execute(store, plan, cancel=None, progress=None):
     # Preflight every destination before the first mutation.
     targets = set()
     for tid, source, target in plan:
@@ -62,6 +62,9 @@ def execute(store, plan):
     try:
         with store.connection() as db:
             for tid, source, target in plan:
+                if cancel is not None and cancel.is_set():
+                    from music_catalog_manager.services.musicbrainz import Cancelled
+                    raise Cancelled()
                 if source == target:
                     continue
                 # Windows rename never overwrites an existing destination.
@@ -72,6 +75,8 @@ def execute(store, plan):
                 db.execute('UPDATE tracks SET path=? WHERE id=?', (normalized(target), tid))
                 db.execute('INSERT INTO operation_history(kind,track_id,before_data,after_data) VALUES(?,?,?,?)',
                            ('rename', tid, json.dumps(str(source)), json.dumps(str(target))))
+                if progress:
+                    progress({'renamed': len(moved), 'total': len(plan)})
     except Exception:
         for source, target in reversed(moved):
             if not source.exists():

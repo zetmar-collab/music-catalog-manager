@@ -30,6 +30,7 @@ def main():
         return 1
     store = Store(args.profile)
     window = MainWindow(store)
+    app.aboutToQuit.connect(window.shutdown)
     window.show()
     if args.verify_audio or args.verify_playback:
         def acceptance():
@@ -50,6 +51,7 @@ def main():
     if args.smoke_test:
         def smoke():
             import json
+            from music_catalog_manager.ui.help_view import help_path
             if args.screenshot:
                 args.screenshot.parent.mkdir(parents=True, exist_ok=True)
                 if window.proxy.rowCount():
@@ -57,7 +59,10 @@ def main():
                 window.grab().save(str(args.screenshot))
             (args.profile / 'smoke-result.json').write_text(json.dumps({'window_visible': window.isVisible(),
                 'version': __version__, 'playback_controls': hasattr(window, 'playback'),
-                'add_folder_label': window.action_buttons[0].text(), 'schema': 1, 'icon_loaded': not window.windowIcon().isNull()}), encoding='utf-8')
+                'add_folder_label': window.action_buttons[0].text(), 'schema': 2, 'icon_loaded': not window.windowIcon().isNull(),
+                'help_languages': [lang for lang in ('pl', 'en') if help_path(lang).is_file()],
+                'playlist_grouping': window.group.count() == 5,
+                'cover_search': hasattr(window, 'cover_online_button')}), encoding='utf-8')
             app.quit()
         QTimer.singleShot(1500, smoke)
     return app.exec()

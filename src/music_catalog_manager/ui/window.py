@@ -5,12 +5,12 @@ import os
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractTableModel, QCoreApplication, QModelIndex, QSortFilterProxyModel, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QCoreApplication, QModelIndex, QSortFilterProxyModel, Qt, QUrl, QTimer, QByteArray
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPalette, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
-    QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QDialogButtonBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QSplitter, QTableView, QVBoxLayout, QWidget)
+    QSplitter, QTableView, QVBoxLayout, QWidget, QScrollArea)
 
 from music_catalog_manager.database.store import FIELDS
 from music_catalog_manager.services import backup, metadata, rename
@@ -20,93 +20,40 @@ from music_catalog_manager.services.scanner import scan
 from music_catalog_manager.ui.i18n import Translator, qt_translator
 from music_catalog_manager.ui.worker import Worker
 from music_catalog_manager.ui.playback import PlaybackBar
+from music_catalog_manager.ui.widgets import ArtworkLabel
+from music_catalog_manager.ui.cover_views import CoverViews
+from music_catalog_manager.ui.playlist_import import PlaylistImportViews
+from music_catalog_manager.ui.help_view import HelpViews
 
 
 def tr(text):
     return QCoreApplication.translate('MainWindow', text)
 
 
-LABELS = dict(zip(FIELDS, ('Title', 'Artist', 'Album', 'Album artist', 'Genre', 'Date', 'Track number', 'Disc number', 'Composer', 'Comment')))
-COLUMNS = [('title', 'Title'), ('artist', 'Artist'), ('album', 'Album'), ('date', 'Date'), ('genre', 'Genre'),
-           ('duration', 'Duration'), ('format', 'Format'), ('path', 'Location'), ('status', 'Tag status')]
+from music_catalog_manager.ui.models import LABELS, COLUMNS, TrackModel, Filter, LibraryProxy
+from music_catalog_manager.ui.library_views import LibraryViews
+from music_catalog_manager.services.library import Library
+from music_catalog_manager.services import audio_backups
 
 
-class TrackModel(QAbstractTableModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.rows = []
-
-    def replace(self, rows):
-        self.beginResetModel()
-        self.rows = rows
-        self.endResetModel()
-
-    def rowCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else len(self.rows)
-
-    def columnCount(self, parent=QModelIndex()):
-        return len(COLUMNS)
-
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
-            return tr(COLUMNS[section][1])
-        return super().headerData(section, orientation, role)
-
-    def data(self, index, role=Qt.DisplayRole):
-        if not index.isValid():
-            return None
-        row = self.rows[index.row()]
-        key = COLUMNS[index.column()][0]
-        if role == Qt.UserRole:
-            if key == 'duration':
-                return row['duration'] or 0
-            return str(row['tags'].get(key, row.get(key, ''))).casefold()
-        if role == Qt.ForegroundRole and not row['available']:
-            return QColor('#a86565')
-        if role == Qt.DisplayRole:
-            if key == 'duration':
-                seconds = int(row['duration'] or 0)
-                return f'{seconds // 60}:{seconds % 60:02}'
-            if key == 'status':
-                if not row['available']:
-                    return tr('Unavailable')
-                if row['dirty']:
-                    return tr('Database changes')
-                if not all(row['tags'].get(k) for k in ('title', 'artist', 'album')):
-                    return tr('Missing tags')
-                return tr('Complete')
-            return row['tags'].get(key, row.get(key, ''))
-
-
-class Filter(QSortFilterProxyModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.query = ''
-        self.filters = {}
-        self.duplicates = False
-        self.hashes = set()
-        self.setSortRole(Qt.UserRole)
-
-    def filterAcceptsRow(self, row, parent):
-        record = self.sourceModel().rows[row]
-        if self.duplicates and (not record.get('sha256') or record['sha256'] not in self.hashes):
-            return False
-        text = ' '.join(str(v) for v in record['tags'].values()) + ' ' + record['path']
-        if self.query not in text.casefold():
-            return False
-        for key, value in self.filters.items():
-            actual = record['tags'].get(key, record.get(key, ''))
-            if value and str(actual).casefold() != value.casefold():
-                return False
-        return True
-
-
-class MainWindow(QMainWindow):
+class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMainWindow):
     def __init__(self, store):
         super().__init__()
         self.store = store
         self.worker = None
         self.pending_result = None
+        self.library = Library(store)
+        self.page_offset = 0
+        self.page_size = 250
+        self.query_sort = 'title'
+        self.query_descending = False
+        self.query_generation = 0
+        self.query_workers = set()
+        self.loading_library = False
+        self.closing = False
+        self.facets_dirty = True
+        self.active_playlist = None
+        self.advanced_override = None
         language = store.setting('language', 'pl' if (locale.getlocale()[0] or '').startswith('Polish') or (locale.getlocale()[0] or '').startswith('pl') else 'en')
         self.translator = Translator(language)
         self.qt_translator = qt_translator(language)
@@ -114,38 +61,53 @@ class MainWindow(QMainWindow):
         QApplication.instance().installTranslator(self.translator)
         self.setWindowTitle('Music Catalog Manager')
         self.setWindowIcon(QIcon(str(Path(__file__).parents[1] / 'resources' / 'icon.ico')))
-        self.resize(1400, 840)
+        self.resize(1400, 900)
         self.build()
         self.apply_theme(store.setting('theme', 'system'))
+        self.restore_layout()
         self.refresh()
 
     def button(self, text, handler, layout):
         button = QPushButton(tr(text))
         button.setAccessibleName(tr(text))
         button.clicked.connect(handler)
-        layout.addWidget(button)
+        if isinstance(layout, QGridLayout):
+            layout.addWidget(button, layout.count() // 2, layout.count() % 2)
+        else:
+            layout.addWidget(button)
         return button
 
     def build(self):
+        self.building = True
         if hasattr(self, 'playback'):
             self.playback.release()
         central = QWidget()
-        self.setCentralWidget(central)
+        shell = QWidget()
+        self.setCentralWidget(shell)
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        work_area = QScrollArea()
+        work_area.setWidgetResizable(True)
+        work_area.setFrameShape(QScrollArea.NoFrame)
+        work_area.setWidget(central)
+        shell_layout.addWidget(work_area, 1)
         outer = QVBoxLayout(central)
         title = QLabel('♫  Music Catalog Manager')
+        self.title_label = title
         title.setStyleSheet('font-size:24px;font-weight:600;padding:12px')
         outer.addWidget(title)
         toolbar = QHBoxLayout()
         outer.addLayout(toolbar)
         self.action_buttons = []
         for label, handler in [('Add folder', self.add_folder), ('Rescan', self.rescan), ('Edit tags', self.edit_tags),
-                ('Find metadata', self.find_metadata), ('Artwork', self.artwork_dialog), ('Rename', self.rename_tracks), ('Create backup', self.create_backup)]:
+                ('Play', lambda: self.playback.toggle())]:
             self.action_buttons.append(self.button(label, handler, toolbar))
         splitter = QSplitter()
+        self.splitter = splitter
         outer.addWidget(splitter, 1)
         self.sidebar = QListWidget()
-        self.sidebar.addItems([tr(x) for x in ('Library', 'Folders', 'Duplicates', 'Backups', 'Settings')])
-        self.sidebar.setMaximumWidth(175)
+        self.sidebar.addItems([tr(x) for x in ('Library', 'Folders', 'Duplicates', 'Backups', 'Settings', 'Albums', 'Playlists', 'Collection quality')])
+        self.sidebar.setMaximumWidth(205)
         self.sidebar.setCurrentRow(0)
         self.sidebar.currentRowChanged.connect(self.navigate)
         splitter.addWidget(self.sidebar)
@@ -155,36 +117,46 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText(tr('Search library…'))
         self.search.setAccessibleName(tr('Search library…'))
         content.addWidget(self.search)
-        filters = QHBoxLayout()
-        content.addLayout(filters)
+        self.filters_panel = QWidget()
+        filters = QGridLayout(self.filters_panel)
+        filters.setContentsMargins(0, 0, 0, 0)
+        content.addWidget(self.filters_panel)
         self.combos = {}
-        for key, label in [('artist', 'Artist'), ('album', 'Album'), ('genre', 'Genre'), ('date', 'Date'), ('format', 'Format'), ('root_id', 'Folder')]:
+        for filter_index, (key, label) in enumerate([('artist', 'Artist'), ('album', 'Album'), ('genre', 'Genre'), ('date', 'Date'), ('format', 'Format'), ('root_id', 'Folder')]):
             combo = QComboBox()
             combo.setMinimumWidth(90)
-            combo.setMaximumWidth(170)
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
             combo.setAccessibleName(tr(label))
             combo.setToolTip(tr(label))
             combo.currentIndexChanged.connect(self.update_filter)
-            filters.addWidget(combo)
+            filters.addWidget(combo, filter_index // 3, filter_index % 3)
             self.combos[key] = combo
-        grouping = QHBoxLayout()
-        content.addLayout(grouping)
+        self.install_library_controls(content)
+        self.grouping_panel = QWidget()
+        grouping = QHBoxLayout(self.grouping_panel)
+        grouping.setContentsMargins(0, 0, 0, 0)
+        content.addWidget(self.grouping_panel)
         grouping.addWidget(QLabel(tr('Group by')))
         self.group = QComboBox()
-        self.group.addItems([tr(x) for x in ('None', 'Artist', 'Album', 'Folder')])
+        self.group.addItems([tr(x) for x in ('None', 'Artist', 'Album', 'Folder', 'Playlist')])
         self.group.currentIndexChanged.connect(self.group_changed)
         grouping.addWidget(self.group)
         self.groups = QComboBox()
-        self.groups.setMinimumWidth(240)
+        self.groups.setMinimumWidth(160)
+        self.groups.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.groups.setMinimumContentsLength(10)
         self.groups.currentIndexChanged.connect(self.group_selected)
         grouping.addWidget(self.groups)
         grouping.addStretch()
         self.table = QTableView()
         self.model = TrackModel(self)
-        self.proxy = Filter(self)
+        self.proxy = LibraryProxy(self)
+        self.proxy.sortRequested.connect(self.sort_library)
         self.proxy.setSourceModel(self.model)
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
+        self.table.sortByColumn(0, Qt.AscendingOrder)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
@@ -200,34 +172,63 @@ class MainWindow(QMainWindow):
         self.enter_shortcut = QShortcut(QKeySequence('Return'), self.table)
         self.enter_shortcut.setContext(Qt.WidgetShortcut)
         self.enter_shortcut.activated.connect(lambda: self.play_index(self.table.currentIndex()))
-        self.search.textChanged.connect(self.update_filter)
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(250)
+        self.search_timer.timeout.connect(self.update_filter)
+        self.search.textChanged.connect(lambda: self.search_timer.start())
         content.addWidget(self.table, 1)
-        bottom = QHBoxLayout()
-        content.addLayout(bottom)
+        self.install_page_controls(content)
+        self.bottom_panel = QWidget()
+        bottom = QGridLayout(self.bottom_panel)
+        bottom.setContentsMargins(0, 0, 0, 0)
+        content.addWidget(self.bottom_panel)
         self.button('Open location', self.open_location, bottom)
-        self.button('Undo database edit', self.undo, bottom)
-        self.button('Write pending tags', self.write_pending, bottom)
-        self.button('Export', self.export, bottom)
-        self.button('History', self.history, bottom)
+        self.undo_button = self.button('Undo database edit', self.undo, bottom)
+        self.write_button = self.button('Write pending tags', self.write_pending, bottom)
+        self.install_tools()
         splitter.addWidget(middle)
         right = QWidget()
-        right.setMinimumWidth(230)
-        right.setMaximumWidth(350)
+        right.setMinimumWidth(200)
+        right.setMaximumWidth(310)
+        self.detail_panel = right
         detail = QVBoxLayout(right)
-        self.cover = QLabel('♫')
+        self.cover = ArtworkLabel('♫')
+        self.cover.setFixedHeight(220)
         self.cover.setAlignment(Qt.AlignCenter)
-        self.cover.setMinimumHeight(220)
         self.cover.setStyleSheet('font-size:60px;border-radius:12px;background:rgba(104,122,144,35)')
         detail.addWidget(self.cover)
+        self.detail_heading = QLabel()
+        self.detail_heading.setTextFormat(Qt.PlainText)
+        self.detail_heading.setWordWrap(True)
+        self.detail_heading.setStyleSheet('font-size:18px;font-weight:600')
+        detail.addWidget(self.detail_heading)
+        self.detail_album = QLabel()
+        self.detail_album.setTextFormat(Qt.PlainText)
+        self.detail_album.setWordWrap(True)
+        detail.addWidget(self.detail_album)
+        self.detail_facts = QLabel()
+        self.detail_facts.setTextFormat(Qt.PlainText)
+        self.detail_facts.setWordWrap(True)
+        detail.addWidget(self.detail_facts)
+        self.cover_online_button = self.button('Find cover online', lambda: self.guarded(self.search_cover_dialog), detail)
+        self.cover_local_button = self.button('Choose local image', lambda: self.guarded(self.choose_local_cover), detail)
+        self.cover_online_button.setEnabled(False)
+        self.cover_local_button.setEnabled(False)
+        self.technical_toggle = QCheckBox(tr('Technical details'))
+        detail.addWidget(self.technical_toggle)
         self.detail_text = QPlainTextEdit()
         self.detail_text.setReadOnly(True)
         detail.addWidget(self.detail_text)
+        self.technical_toggle.toggled.connect(self.detail_text.setVisible)
+        self.detail_text.hide()
+        detail.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([160, 930, 270])
         self.playback = PlaybackBar(self.store, self.selected, self.visible_tracks, self)
-        outer.addWidget(self.playback)
+        shell_layout.addWidget(self.playback)
         status = QHBoxLayout()
-        outer.addLayout(status)
+        shell_layout.addLayout(status)
         self.status = QLabel(tr('Ready'))
         status.addWidget(self.status, 1)
         self.progress = QProgressBar()
@@ -235,6 +236,25 @@ class MainWindow(QMainWindow):
         status.addWidget(self.progress)
         self.cancel_button = self.button('Cancel', self.cancel, status)
         self.cancel_button.setEnabled(False)
+        self.building = False
+        self.adapt_layout()
+
+    def adapt_layout(self):
+        compact = self.height() < 720
+        self.title_label.setVisible(not compact)
+        self.detail_panel.setVisible(self.width() >= 1100)
+        self.bottom_panel.setVisible(not compact)
+        visible = self.advanced_override if self.advanced_override is not None else not compact
+        self.filters_panel.setVisible(visible)
+        self.grouping_panel.setVisible(visible)
+        self.filters_toggle.blockSignals(True)
+        self.filters_toggle.setChecked(visible)
+        self.filters_toggle.blockSignals(False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'detail_panel') and not getattr(self, 'building', False):
+            self.adapt_layout()
 
     def apply_theme(self, theme):
         app = QApplication.instance()
@@ -256,70 +276,72 @@ class MainWindow(QMainWindow):
         return [self.model.rows[self.proxy.mapToSource(i).row()] for i in sorted(self.table.selectionModel().selectedRows(), key=lambda index: index.row())]
 
     def visible_tracks(self):
-        return [self.model.rows[self.proxy.mapToSource(self.proxy.index(i, 0)).row()] for i in range(self.proxy.rowCount())]
+        return list(self.library.all(**self.library_options()))
 
     def play_index(self, index):
         if index.isValid():
             self.playback.play_track(self.model.rows[self.proxy.mapToSource(index).row()])
 
     def refresh(self):
-        rows = self.store.tracks()
-        self.model.replace(rows)
-        counts = {}
-        for row in rows:
-            if row['sha256']:
-                counts[row['sha256']] = counts.get(row['sha256'], 0) + 1
-        self.proxy.hashes = {h for h, count in counts.items() if count > 1}
-        roots = {r['id']: r['path'] for r in self.store.roots()}
-        for key, combo in self.combos.items():
-            previous = combo.currentData()
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(tr('All') + ': ' + tr(dict((k, v) for k, v in [('artist', 'Artist'), ('album', 'Album'), ('genre', 'Genre'), ('date', 'Date'), ('format', 'Format'), ('root_id', 'Folder')])[key]), '')
-            values = sorted({str(r['tags'].get(key, r.get(key, ''))) for r in rows if r['tags'].get(key, r.get(key, ''))}, key=str.casefold)
-            for value in values:
-                combo.addItem(roots.get(int(value), value) if key == 'root_id' else value, value)
-            idx = combo.findData(previous)
-            combo.setCurrentIndex(max(0, idx))
-            combo.blockSignals(False)
-        self.group_changed()
-        self.update_filter()
-        self.details()
+        self.facets_dirty = True
+        self.load_library()
 
     def update_filter(self, *_):
-        self.proxy.query = self.search.text().casefold()
-        self.proxy.filters = {key: combo.currentData() or '' for key, combo in self.combos.items()}
-        self.proxy.invalidate()
-        self.status.setText(tr('Tracks') + f': {self.proxy.rowCount()} / {self.model.rowCount()}')
+        self.page_offset = 0
+        self.load_library()
 
     def group_changed(self, *_):
+        old = getattr(self, 'group_filter_key', None)
+        if old in self.combos:
+            self.combos[old].blockSignals(True)
+            self.combos[old].setCurrentIndex(0)
+            self.combos[old].blockSignals(False)
+        if old == 'playlist':
+            self.active_playlist = None
+        self.populate_groups()
         self.groups.blockSignals(True)
-        self.groups.clear()
-        self.groups.addItem(tr('All'), '')
-        key = {1: 'artist', 2: 'album', 3: 'root_id'}.get(self.group.currentIndex())
-        if key:
-            source = self.combos[key]
-            for index in range(1, source.count()):
-                self.groups.addItem(source.itemText(index), source.itemData(index))
+        self.groups.setCurrentIndex(0)
         self.groups.blockSignals(False)
         self.group_selected()
 
     def group_selected(self, *_):
         key = {1: 'artist', 2: 'album', 3: 'root_id'}.get(self.group.currentIndex())
+        self.group_filter_key = 'playlist' if self.group.currentIndex() == 4 else key
+        if self.group.currentIndex() == 4:
+            self.active_playlist = self.groups.currentData() or None
+            self.query_sort = 'playlist_position' if self.active_playlist is not None else 'title'
+            self.query_descending = False
+            self.table.horizontalHeader().blockSignals(True)
+            self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+            self.table.horizontalHeader().blockSignals(False)
+            self.update_filter()
+            return
         if key:
             self.combos[key].setCurrentIndex(max(0, self.combos[key].findData(self.groups.currentData())))
             self.table.sortByColumn({'artist': 1, 'album': 2, 'root_id': 7}[key], Qt.AscendingOrder)
+        else:
+            self.update_filter()
 
     def details(self, *_):
         selected = self.selected()
+        if hasattr(self, 'cover_online_button'):
+            self.cover_online_button.setEnabled(bool(selected) and not self.worker)
+            self.cover_local_button.setEnabled(bool(selected) and not self.worker)
         self.cover.setPixmap(QPixmap())
         self.cover.setText('♫')
         if not selected:
+            self.detail_heading.setText(tr('Select a track to see details.'))
+            self.detail_album.clear()
+            self.detail_facts.clear()
             self.detail_text.setPlainText(tr('Select a track to see details.'))
             return
         row = selected[0]
+        self.detail_heading.setText(row['tags'].get('title') or Path(row['path']).stem)
+        self.detail_album.setText('\n'.join(filter(None, (row['tags'].get('artist'), row['tags'].get('album')))))
+        facts = [row['tags'].get('genre', ''), row['tags'].get('date', ''), row['format'], f"{int(row['duration'] or 0)//60}:{int(row['duration'] or 0)%60:02}", f"{(row['bitrate'] or 0)//1000} kbps"]
+        self.detail_facts.setText(' · '.join(filter(None, facts)))
         text = '\n'.join(tr(LABELS[k]) + ': ' + row['tags'].get(k, '') for k in FIELDS)
-        text += f"\n\n{row['format']} · {row['size']:,} B · {row['bitrate'] or 0} bps\n{row['path']}"
+        text += f"\n\n{row['format']} · {row['size'] or 0:,} B · {row['bitrate'] or 0} bps\n{row['path']}"
         if row['sha256'] in self.proxy.hashes:
             text += '\n' + tr('Confirmed duplicate (SHA-256)')
         if not metadata.writable(row['path']):
@@ -328,7 +350,7 @@ class MainWindow(QMainWindow):
         if row['artwork']:
             pix = QPixmap(str(self.store.cache / row['artwork']))
             if not pix.isNull():
-                self.cover.setPixmap(pix.scaled(260, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.cover.setPixmap(pix)
 
     def error(self, detail):
         self.store.log('error', after=detail)
@@ -370,6 +392,9 @@ class MainWindow(QMainWindow):
     def start(self, function, done=None, lock_playback=False):
         if self.worker:
             return
+        self.tools_menu.setEnabled(False)
+        self.cover_online_button.setEnabled(False)
+        self.cover_local_button.setEnabled(False)
         self.playback.set_busy(lock_playback)
         self.worker = Worker(function, self)
         self.pending_result = None
@@ -400,11 +425,14 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.cancel_button.setEnabled(False)
         self.playback.set_busy(False)
+        self.tools_menu.setEnabled(True)
         self.refresh()
         result, callback = self.pending_result, self.done_callback
         self.pending_result = None
-        if result is not None:
+        if result is not None and not self.closing:
             self.guarded(lambda: callback(result[0]))
+        if self.closing:
+            self.close()
 
     def cancel(self):
         if self.worker:
@@ -468,7 +496,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(copies)
         layout.addWidget(QLabel(tr('Database undo does not restore audio files.')))
         buttons = QDialogButtonBox()
-        buttons.addButton(tr('Preview'), QDialogButtonBox.AcceptRole)
+        preview_button = buttons.addButton(tr('Save in catalog'), QDialogButtonBox.AcceptRole)
+        disk.toggled.connect(lambda enabled: preview_button.setText(tr('Save to files') if enabled else tr('Save in catalog')))
         buttons.addButton(tr('Cancel'), QDialogButtonBox.RejectRole)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -484,16 +513,19 @@ class MainWindow(QMainWindow):
             self.write_changes(tracks, changes, disk.isChecked(), copies.isChecked())
 
     def write_changes(self, tracks, changes, disk=False, copies=True, image=None):
+        import uuid
+        operation_id = uuid.uuid4().hex
         def work(cancel, progress):
             errors = []
-            for track in tracks:
+            for track_index, track in enumerate(tracks):
                 if cancel.is_set():
                     break
                 try:
                     if disk:
-                        metadata.write_safe(track['path'], changes, image, self.store.profile / 'audio-backups' if copies else None)
+                        backup_path = metadata.write_safe(track['path'], changes, image, self.store.profile / 'audio-backups' if copies else None)
+                        audio_backups.register(self.store, track['id'], track['path'], backup_path)
                     if changes:
-                        self.store.edit([track['id']], changes)
+                        self.store.edit([track['id']], changes, operation_id)
                     if image:
                         cache_image(self.store, track['id'], image, 'manual')
                     if disk:
@@ -503,8 +535,9 @@ class MainWindow(QMainWindow):
                             pending = self.store.track(track['id'])['tags']
                             actual = metadata.read(track['path'])['tags']
                             dirty = int(any(actual.get(k, '') != pending.get(k, '') for k in FIELDS))
-                            db.execute('UPDATE tracks SET mtime=?,size=?,sha256=NULL,dirty=? WHERE id=?', (st.st_mtime_ns, st.st_size, dirty, track['id']))
+                            db.execute('UPDATE tracks SET mtime=?,size=?,sha256=NULL,dirty=?,file_key=? WHERE id=?', (st.st_mtime_ns, st.st_size, dirty, f'{st.st_dev}:{st.st_ino}', track['id']))
                     self.store.log('write' if disk else 'database', track['id'], after=changes)
+                    progress({'processed': track_index + 1, 'total': len(tracks)})
                 except Exception as exc:
                     errors.append(Path(track['path']).name + ': ' + str(exc))
                     self.store.log('write_error', track['id'], after=str(exc))
@@ -525,18 +558,18 @@ class MainWindow(QMainWindow):
             def action():
                 plan = rename.preview(tracks, template)
                 if self.preview('Preview changes', '\n'.join(str(a) + ' → ' + b.name for _, a, b in plan)):
-                    self.start(lambda cancel, progress: rename.execute(self.store, plan), lock_playback=True)
+                    self.start(lambda cancel, progress: rename.execute(self.store, plan, cancel, progress), lock_playback=True)
             self.guarded(action)
 
-    def internet(self, action, done):
-        contact = self.store.setting('contact', '')
+    def internet(self, action, done, contact=None, with_progress=False):
+        contact = self.store.setting('contact', '') if contact is None else contact
         if not contact:
             QMessageBox.information(self, tr('Settings'), tr('Configure a contact email or URL in Settings before using internet services.'))
             return
         def work(cancel, progress):
             client = MusicBrainz(self.store.profile, contact, cancel)
             try:
-                return action(client)
+                return action(client, progress) if with_progress else action(client)
             finally:
                 client.close()
         self.start(work, done)
@@ -577,14 +610,14 @@ class MainWindow(QMainWindow):
         tracks = self.selected()
         if not tracks:
             return
-        choices = [tr('Choose local image'), tr('Cover Art Archive')]
+        choices = [tr('Find cover online'), tr('Choose local image'), tr('Cover Art Archive (MBID)')]
         value, ok = QInputDialog.getItem(self, tr('Artwork'), tr('Source'), choices, 0, False)
         if not ok:
             return
         if value == choices[0]:
-            path, _ = QFileDialog.getOpenFileName(self, tr('Choose local image'), '', 'Images (*.jpg *.jpeg *.png)')
-            if path:
-                self.guarded(lambda: self.apply_artwork(tracks, validate_image(Path(path).read_bytes())))
+            self.search_cover_dialog(tracks)
+        elif value == choices[1]:
+            self.choose_local_cover(tracks)
         else:
             release, ok = QInputDialog.getText(self, tr('Cover Art Archive'), tr('Release MBID (verify album)'), text=tracks[0]['tags'].get('musicbrainz_albumid', ''))
             if ok and release:
@@ -604,20 +637,30 @@ class MainWindow(QMainWindow):
                 raise ValueError(tr('Read-only format'))
             self.write_changes(tracks, {}, True, True, data)
         else:
+            targets = {}
             for track in tracks:
-                if choice == choices[2]:
-                    target = Path(track['path']).parent / 'folder.jpg'
-                    overwrite = target.exists()
-                    if overwrite and not self.confirm(tr('Replace existing file?') + '\n' + str(target)):
-                        continue
-                    folder_image(track['path'], data, overwrite)
-                cache_image(self.store, track['id'], data, 'Cover Art Archive' if release else 'local', release)
-            self.refresh()
+                targets.setdefault(Path(track['path']).parent, []).append(track)
+            approved = []
+            for folder, members in targets.items():
+                target = folder / 'folder.jpg'
+                if choice == choices[2] and target.exists() and not self.confirm(tr('Replace existing file?') + '\n' + str(target)):
+                    continue
+                approved.append((folder, members))
+            def work(cancel, progress):
+                for index, (folder, members) in enumerate(approved):
+                    if cancel.is_set():
+                        break
+                    if choice == choices[2]:
+                        folder_image(members[0]['path'], data, (folder / 'folder.jpg').exists())
+                    for track in members:
+                        cache_image(self.store, track['id'], data, 'Cover Art Archive' if release else 'local', release)
+                    progress({'folders': index + 1, 'total': len(approved)})
+            self.start(work)
 
     def create_backup(self):
-        path, _ = QFileDialog.getSaveFileName(self, tr('Create backup'), 'MusicCatalog.zip', 'ZIP (*.zip)')
+        path, _ = QFileDialog.getSaveFileName(self, tr('Create backup'), str(self.store.profile / 'MusicCatalog.zip'), 'ZIP (*.zip)')
         if path:
-            self.start(lambda cancel, progress: backup.create(self.store, path), lambda _: QMessageBox.information(self, tr('Create backup'), tr('Backup created. Audio files are not included.')))
+            self.start(lambda cancel, progress: backup.create(self.store, path, cancel, progress), lambda _: QMessageBox.information(self, tr('Create backup'), tr('Backup created. Audio files are not included.')))
 
     def restore_backup(self):
         path, _ = QFileDialog.getOpenFileName(self, tr('Restore backup'), '', 'ZIP (*.zip)')
@@ -626,37 +669,29 @@ class MainWindow(QMainWindow):
                 manifest = backup.inspect(path)
                 summary = tr('Replace current library? A safety backup will be created. Audio files are not restored.') + '\n\n' + json.dumps(manifest, indent=2)
                 if self.preview('Restore backup', summary):
-                    self.start(lambda cancel, progress: backup.restore(self.store, path), lambda _: self.refresh(), lock_playback=True)
+                    self.start(lambda cancel, progress: backup.restore(self.store, path, cancel, progress), lambda _: self.refresh(), lock_playback=True)
             self.guarded(action)
 
     def navigate(self, index):
-        if self.worker and index in (1, 3, 4):
-            self.sidebar.setCurrentRow(0)
+        if self.worker:
             return
-        self.proxy.duplicates = index == 2
-        self.proxy.invalidate()
-        if index == 1:
-            self.folders()
-        elif index == 3:
-            choices = [tr('Create backup'), tr('Restore backup')]
-            value, ok = QInputDialog.getItem(self, tr('Backups'), tr('Action'), choices, 0, False)
-            if ok:
-                self.create_backup() if value == choices[0] else self.restore_backup()
-        elif index == 4:
-            self.settings()
-        elif index == 2 and not self.proxy.hashes:
-            QMessageBox.information(self, tr('Duplicates'), tr('Enable SHA-256 in Settings and rescan to confirm duplicates.'))
+        if index in (0, 2):
+            self.proxy.duplicates = index == 2
+            self.active_playlist = None
+            if self.group.currentIndex() == 4:
+                self.group.setCurrentIndex(0)
+            self.update_filter()
+            return
+        handlers = {1: self.folders_dialog, 3: self.backups_dialog, 4: self.settings,
+                    5: self.albums_dialog, 6: self.playlists_dialog, 7: self.quality_dialog}
+        if index in handlers:
+            self.guarded(handlers[index])
+        self.sidebar.blockSignals(True)
+        self.sidebar.setCurrentRow(2 if self.proxy.duplicates else 0)
+        self.sidebar.blockSignals(False)
 
     def folders(self):
-        roots = self.store.roots()
-        if not roots:
-            return
-        choice, ok = QInputDialog.getItem(self, tr('Folders'), tr('Select a folder to relink'), [r['path'] for r in roots], 0, False)
-        if ok:
-            target = QFileDialog.getExistingDirectory(self, tr('New location'))
-            if target and self.confirm(choice + ' → ' + target):
-                root_id = next(r['id'] for r in roots if r['path'] == choice)
-                self.start(lambda cancel, progress: self.store.relink(root_id, target), lock_playback=True)
+        self.folders_dialog()
 
     def settings(self):
         dialog = QDialog(self)
@@ -685,6 +720,7 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
         if dialog.exec() == QDialog.Accepted:
+            self.save_layout()
             for key, value in [('language', language.currentData()), ('theme', theme.currentData()), ('contact', contact.text().strip()), ('hashes', hashes.isChecked())]:
                 self.store.set_setting(key, value)
             QApplication.instance().removeTranslator(self.translator)
@@ -695,13 +731,16 @@ class MainWindow(QMainWindow):
             QApplication.instance().installTranslator(self.translator)
             self.build()
             self.apply_theme(theme.currentData())
+            self.restore_layout()
             self.refresh()
 
     def undo(self):
         if self.worker:
             return
-        self.store.undo()
-        self.refresh()
+        count = self.store.undo_count()
+        if count and self.confirm(tr('Undo database changes for tracks:') + ' ' + str(count)):
+            self.store.undo()
+            self.refresh()
 
     def write_pending(self):
         if self.worker:
@@ -718,10 +757,11 @@ class MainWindow(QMainWindow):
                     if cancel.is_set():
                         break
                     try:
-                        metadata.write_safe(track['path'], track['tags'], backup_dir=self.store.profile / 'audio-backups')
+                        backup_path = metadata.write_safe(track['path'], track['tags'], backup_dir=self.store.profile / 'audio-backups')
+                        audio_backups.register(self.store, track['id'], track['path'], backup_path)
                         st = Path(track['path']).stat()
                         with self.store.connection() as db:
-                            db.execute('UPDATE tracks SET mtime=?,size=?,sha256=NULL,dirty=0 WHERE id=?', (st.st_mtime_ns, st.st_size, track['id']))
+                            db.execute('UPDATE tracks SET mtime=?,size=?,sha256=NULL,dirty=0,file_key=? WHERE id=?', (st.st_mtime_ns, st.st_size, f'{st.st_dev}:{st.st_ino}', track['id']))
                         self.store.log('write', track['id'], after=track['tags'])
                     except Exception as exc:
                         errors.append(str(exc))
@@ -738,33 +778,42 @@ class MainWindow(QMainWindow):
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(tracks[0]['path']).parent)))
 
     def export(self):
-        path, _ = QFileDialog.getSaveFileName(self, tr('Export'), 'library.json', 'JSON (*.json);;CSV (*.csv)')
-        if not path:
+        if self.worker:
             return
-        rows = [self.model.rows[self.proxy.mapToSource(self.proxy.index(i, 0)).row()] for i in range(self.proxy.rowCount())]
-        def action():
-            if Path(path).exists() and not self.confirm(tr('Replace existing file?')):
-                return
-            with open(path, 'w', encoding='utf-8', newline='') as file:
-                if Path(path).suffix.lower() == '.csv':
-                    writer = csv.DictWriter(file, fieldnames=['path', 'format', *FIELDS])
-                    writer.writeheader()
-                    for row in rows:
-                        writer.writerow({'path': row['path'], 'format': row['format'], **{k: row['tags'].get(k, '') for k in FIELDS}})
-                else:
-                    json.dump(rows, file, ensure_ascii=False, indent=2)
-        self.guarded(action)
+        path, _ = QFileDialog.getSaveFileName(self, tr('Export'), 'library.json', 'JSON (*.json);;CSV (*.csv)')
+        if not path or (Path(path).exists() and not self.confirm(tr('Replace existing file?'))):
+            return
+        from music_catalog_manager.services.export import export_library
+        options = self.library_options()
+        self.start(lambda cancel, progress: export_library(self.store, options, path, cancel, progress))
 
     def history(self):
         with self.store.connection() as db:
             rows = [dict(r) for r in db.execute('SELECT * FROM operation_history ORDER BY id DESC LIMIT 200')]
-        self.preview('History', json.dumps(rows, ensure_ascii=False, indent=2))
+        dialog, _ = self.table_dialog('History', ['Created', 'Action', 'Tracks', 'Details'], [(r['created'], r['kind'], r['track_id'], r['after_data']) for r in rows])
+        dialog.exec()
+
+    def shutdown(self):
+        self.closing = True
+        self.query_generation += 1
+        if self.worker:
+            self.worker.cancel.set()
+            self.worker.wait()
+        for worker in list(self.query_workers):
+            worker.wait()
+        self.playback.release()
 
     def closeEvent(self, event):
+        self.save_layout()
         self.playback.release()
         if self.worker:
+            self.closing = True
             self.cancel()
             event.ignore()
-            self.status.setText(tr('Wait for the current operation to stop, then close the window.'))
+            self.status.setText(tr('Cancelling…'))
         else:
+            self.closing = True
+            self.query_generation += 1
+            for worker in list(self.query_workers):
+                worker.wait()
             event.accept()

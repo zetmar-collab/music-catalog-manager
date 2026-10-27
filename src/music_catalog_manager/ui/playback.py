@@ -1,7 +1,9 @@
 from pathlib import Path
+import random
 
 from PySide6.QtCore import QCoreApplication, Qt, QUrl, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QAbstractItemView)
 
 
 def tr(text):
@@ -31,7 +33,20 @@ class PlaybackBar(QWidget):
         self.now_playing = QLabel(tr('No track playing'))
         self.now_playing.setTextFormat(Qt.PlainText)
         self.now_playing.setWordWrap(True)
-        layout.addWidget(self.now_playing)
+        heading = QHBoxLayout()
+        heading.addWidget(self.now_playing, 1)
+        self.shuffle = QCheckBox(tr('Shuffle'))
+        self.shuffle.setChecked(bool(store.setting('shuffle', False)))
+        self.shuffle.toggled.connect(self.shuffle_changed)
+        heading.addWidget(self.shuffle)
+        self.repeat = QComboBox()
+        for label, key in [('No repeat', 'off'), ('Repeat track', 'one'), ('Repeat queue', 'all')]:
+            self.repeat.addItem(tr(label), key)
+        self.repeat.setCurrentIndex(max(0, self.repeat.findData(store.setting('repeat', 'off'))))
+        self.repeat.currentIndexChanged.connect(self.repeat_changed)
+        heading.addWidget(self.repeat)
+        self.queue_button = self.button('Queue', self.queue_dialog, heading)
+        layout.addLayout(heading)
         controls = QHBoxLayout()
         layout.addLayout(controls)
         self.previous_button = self.button('Previous', self.previous, controls)
@@ -52,6 +67,10 @@ class PlaybackBar(QWidget):
         self.volume.setFixedWidth(100)
         self.volume.setValue(max(0, min(100, int(store.setting('volume', 60)))))
         self.volume.valueChanged.connect(self.set_volume)
+        self.volume_timer = QTimer(self)
+        self.volume_timer.setSingleShot(True)
+        self.volume_timer.setInterval(250)
+        self.volume_timer.timeout.connect(lambda: store.set_setting('volume', self.volume.value()))
         controls.addWidget(self.volume)
         self.update_controls()
 
@@ -94,7 +113,65 @@ class PlaybackBar(QWidget):
         self.current = next((i for i, item in enumerate(self.queue) if item['id'] == track['id']), -1)
         if self.current < 0:
             self.queue, self.current = [track], 0
+        if self.shuffle.isChecked():
+            chosen = self.queue.pop(self.current)
+            random.shuffle(self.queue)
+            self.queue.insert(0, chosen)
+            self.current = 0
         self.play_current()
+
+    def set_queue(self, tracks):
+        if self.busy or not tracks:
+            return
+        self.queue = list(tracks)
+        if self.shuffle.isChecked():
+            random.shuffle(self.queue)
+        self.current = 0
+        self.play_current()
+
+    def shuffle_changed(self, enabled):
+        self.store.set_setting('shuffle', enabled)
+        if enabled and self.queue and self.current >= 0:
+            tail = self.queue[self.current + 1:]
+            random.shuffle(tail)
+            self.queue[self.current + 1:] = tail
+
+    def repeat_changed(self, *_):
+        self.store.set_setting('repeat', self.repeat.currentData())
+        self.update_controls()
+
+    def queue_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('Queue'))
+        dialog.resize(700, 500)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(tr('Drag tracks to reorder. Select and remove unwanted entries.')))
+        view = QListWidget()
+        view.setDragDropMode(QAbstractItemView.InternalMove)
+        original = list(self.queue)
+        current = self.current
+        for index, track in enumerate(original):
+            item = QListWidgetItem(('▶ ' if index == current else '') + (track['tags'].get('title') or Path(track['path']).name) + ' — ' + track['tags'].get('artist', ''))
+            item.setData(Qt.UserRole, index)
+            view.addItem(item)
+        layout.addWidget(view)
+        self.button('Remove selected', lambda: view.takeItem(view.currentRow()) if view.currentRow() >= 0 else None, layout)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted and not self.busy:
+            # Playback can advance while this dialog is open: resolve its current item now.
+            current_track = self.queue[self.current] if 0 <= self.current < len(self.queue) else None
+            indices = [view.item(i).data(Qt.UserRole) for i in range(view.count())]
+            self.queue = [original[i] for i in indices]
+            self.current = next((i for i, track in enumerate(self.queue) if track is current_track), -1)
+            if self.current < 0:
+                remaining = self.queue
+                self.release()
+                self.queue = remaining
+                self.current = 0 if remaining else -1
+            self.update_controls()
 
     def play_current(self):
         if self.busy or not 0 <= self.current < len(self.queue):
@@ -131,6 +208,8 @@ class PlaybackBar(QWidget):
                 self.player.pause()
             else:
                 self.player.play()
+        elif self.queue and self.current >= 0:
+            self.play_current()
         elif chosen:
             self.play_track(chosen[0])
         self.update_controls()
@@ -142,6 +221,9 @@ class PlaybackBar(QWidget):
         self.update_controls()
 
     def release(self):
+        if self.volume_timer.isActive():
+            self.volume_timer.stop()
+            self.store.set_setting('volume', self.volume.value())
         if self.player:
             # Retire on the Qt event loop; deleting a multimedia backend inside
             # its own signal dispatch can crash. File mutations wait for it.
@@ -186,10 +268,17 @@ class PlaybackBar(QWidget):
         if not self.busy and self.current + 1 < len(self.queue):
             self.current += 1
             self.play_current()
+        elif not self.busy and self.queue and self.repeat.currentData() == 'all':
+            self.current = 0
+            self.play_current()
 
     def media_status(self, status):
-        if status == self.player.MediaStatus.EndOfMedia:
-            self.next()
+        if self.player and status == self.player.MediaStatus.EndOfMedia:
+            if self.repeat.currentData() == 'one':
+                self.player.setPosition(0)
+                self.player.play()
+            else:
+                self.next()
         self.update_controls()
 
     def media_error(self, error, detail):
@@ -205,7 +294,7 @@ class PlaybackBar(QWidget):
     def set_volume(self, value):
         if self.output:
             self.output.setVolume(value / 100)
-        self.store.set_setting('volume', value)
+        self.volume_timer.start()
 
     def seek_to(self, position):
         if self.player and self.player.isSeekable():
@@ -229,5 +318,6 @@ class PlaybackBar(QWidget):
         self.play_button.setEnabled(not self.busy)
         self.stop_button.setEnabled(loaded and not self.busy)
         self.previous_button.setEnabled(not self.busy and self.current > 0)
-        self.next_button.setEnabled(not self.busy and self.current + 1 < len(self.queue))
+        self.next_button.setEnabled(not self.busy and bool(self.queue) and (self.current + 1 < len(self.queue) or self.repeat.currentData() == 'all'))
+        self.queue_button.setEnabled(not self.busy)
         self.seek.setEnabled(loaded and self.player.isSeekable() and not self.busy)

@@ -7,6 +7,16 @@ from music_catalog_manager.database.store import Store
 from music_catalog_manager.paths import windows_path
 
 
+@pytest.fixture(autouse=True)
+def fail_on_unexpected_window_errors(monkeypatch):
+    """Report background failures instead of leaving unattended tests in a modal dialog."""
+    from music_catalog_manager.ui.window import MainWindow
+    errors = []
+    monkeypatch.setattr(MainWindow, 'error', lambda self, detail: errors.append(str(detail)))
+    yield
+    assert not errors, 'Unexpected background error: ' + '\n'.join(errors)
+
+
 @pytest.fixture
 def store(tmp_path):
     return Store(tmp_path / 'profile')

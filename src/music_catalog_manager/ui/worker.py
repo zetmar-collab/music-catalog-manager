@@ -17,5 +17,5 @@ class Worker(QThread):
             self.result.emit(self.function(self.cancel, self.progress.emit))
         except Exception as exc:
             from music_catalog_manager.services.musicbrainz import Cancelled
-            if not isinstance(exc, Cancelled):
+            if not isinstance(exc, Cancelled) and not self.cancel.is_set():
                 self.failed.emit(str(exc))

@@ -167,6 +167,7 @@ def write_safe(path, changes, image=None, backup_dir=None):
     fd, name = tempfile.mkstemp(prefix='.mcm-', suffix=path.suffix, dir=path.parent)
     os.close(fd)
     temp = Path(name)
+    backup_path = None
     try:
         shutil.copy2(path, temp)
         _modify(temp, changes, image)
@@ -182,7 +183,9 @@ def write_safe(path, changes, image=None, backup_dir=None):
             import uuid
             folder = Path(backup_dir)
             folder.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, folder / (uuid.uuid4().hex + '-' + path.name))
+            backup_path = folder / (uuid.uuid4().hex + '-' + path.name)
+            shutil.copy2(path, backup_path)
         os.replace(temp, path)
+        return backup_path
     finally:
         temp.unlink(missing_ok=True)

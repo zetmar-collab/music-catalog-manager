@@ -1,0 +1,44 @@
+[
+  {
+    "scale": "1",
+    "target": [
+      1400,
+      900
+    ],
+    "actual": [
+      1400,
+      900
+    ],
+    "rows": 24,
+    "playback_visible": true,
+    "passed": true
+  },
+  {
+    "scale": "1.25",
+    "target": [
+      1280,
+      800
+    ],
+    "actual": [
+      1280,
+      800
+    ],
+    "rows": 24,
+    "playback_visible": true,
+    "passed": true
+  },
+  {
+    "scale": "2",
+    "target": [
+      960,
+      540
+    ],
+    "actual": [
+      960,
+      531
+    ],
+    "rows": 24,
+    "playback_visible": true,
+    "passed": true
+  }
+]

@@ -19,6 +19,7 @@ def wait_until(predicate, timeout=5000):
     started = time.monotonic()
     while not predicate() and (time.monotonic() - started) * 1000 < timeout:
         QTest.qWait(10)
+        time.sleep(0.001)
     assert predicate()
 
 
@@ -56,7 +57,7 @@ def test_pause_seek_volume_queue_and_release(tmp_path):
     wait_until(lambda: bar.player.position() >= 400)
     bar.volume.setValue(35)
     assert abs(bar.output.volume() - 0.35) < 0.001
-    assert store.setting('volume') == 35
+    wait_until(lambda: store.setting('volume') == 35)
     bar.output.setMuted(True)
     bar.toggle()
     assert bar.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
@@ -88,6 +89,7 @@ def test_missing_file_and_double_click(tmp_path, audio_factory):
     store.set_setting('volume', 0)
     scan(store, store.add_root(path.parent))
     window = MainWindow(store)
+    wait_until(lambda: not window.loading_library)
     window.show()
     app.processEvents()
     index = window.proxy.index(0, 0)
@@ -129,6 +131,7 @@ def test_write_waits_for_playback_to_release_file(tmp_path, audio_factory):
     store.set_setting('volume', 0)
     scan(store, store.add_root(path.parent))
     window = MainWindow(store)
+    wait_until(lambda: not window.loading_library)
     window.table.selectRow(0)
     window.playback.toggle()
     window.write_changes(window.selected(), {'title': 'Po odtworzeniu'}, disk=True)

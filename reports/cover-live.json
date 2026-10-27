@@ -1,0 +1,17 @@
+{
+  "artist": "Miles Davis",
+  "album": "Kind of Blue",
+  "passed": true,
+  "covers": [
+    {
+      "release_id": "e32a3f0b-1c19-3170-bb1c-650893774744",
+      "album": "Kind of Blue",
+      "artist": "Miles Davis",
+      "date": "1987",
+      "country": "US",
+      "source": "Cover Art Archive",
+      "url": "https://musicbrainz.org/release/e32a3f0b-1c19-3170-bb1c-650893774744"
+    }
+  ],
+  "errors": []
+}

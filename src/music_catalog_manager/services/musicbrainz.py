@@ -119,3 +119,32 @@ class MusicBrainz:
     def cover(self, release_id):
         release_id = str(uuid.UUID(release_id))
         return self.request(f'https://coverartarchive.org/release/{release_id}/front-500', binary=True)
+
+    def releases(self, artist, album):
+        def quoted(value):
+            return '"' + ''.join('\\' + c if c in '+-&|!(){}[]^"~*?:\\/' else c for c in value) + '"'
+        query = 'release:' + quoted(album)
+        if artist:
+            query += ' AND artist:' + quoted(artist)
+        data = self.request('https://musicbrainz.org/ws/2/release', {'query': query, 'fmt': 'json', 'limit': 15})
+        return (data or {}).get('releases', [])
+
+    def release_tracks(self, release_id):
+        release_id = str(uuid.UUID(release_id))
+        release = self.request(f'https://musicbrainz.org/ws/2/release/{release_id}', {'fmt': 'json', 'inc': 'recordings+artist-credits'})
+        if not release:
+            return []
+        def credit(values):
+            return ''.join(x.get('name', x.get('artist', {}).get('name', '')) + x.get('joinphrase', '') for x in values)
+        result = []
+        for medium in release.get('media', []):
+            tracks = medium.get('tracks', [])
+            for track in tracks:
+                recording = track.get('recording', {})
+                result.append({'title': track.get('title') or recording.get('title', ''),
+                    'artist': credit(track.get('artist-credit') or recording.get('artist-credit') or release.get('artist-credit', [])),
+                    'albumartist': credit(release.get('artist-credit', [])), 'album': release.get('title', ''),
+                    'date': release.get('date', ''), 'tracknumber': f"{track.get('position', 0)}/{len(tracks)}",
+                    'discnumber': f"{medium.get('position', 1)}/{len(release.get('media', []))}",
+                    'musicbrainz_albumid': release_id, 'musicbrainz_recordingid': recording.get('id', '')})
+        return result
