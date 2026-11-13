@@ -64,13 +64,46 @@ class PlaylistImportViews:
             return
         do_scan = catalog.isChecked()
         hashes = self.store.setting('hashes', False)
+        self.import_playlist_paths(selected, root, do_scan)
+
+    def import_playlist_paths(self, selected, root=None, do_scan=False):
+        from music_catalog_manager.services import playlist_revisions
+        hashes = self.store.setting('hashes', False)
         def work(cancel, progress):
             if do_scan:
                 rid = self.store.add_root(root)
                 scan(self.store, rid, cancel, progress, hashes)
-            return playlists.import_files(self.store, selected, root, cancel, progress)
-        def done(results):
-            dialog, _ = self.table_dialog('Playlist import results', ['File', 'Playlist', 'Matched tracks:', 'Unmatched paths:', 'Details'],
-                [(r['path'], r.get('name', ''), r['matched'], len(r['missing']), r['error'] or '\n'.join(r['missing'])) for r in results])
-            dialog.exec()
+            plans, errors = [], []
+            for path in selected:
+                playlists.check_cancel(cancel)
+                try:
+                    plans.append(playlist_revisions.plan(self.store, path, root, cancel))
+                except Exception as exc:
+                    playlists.check_cancel(cancel)
+                    errors.append(str(path) + ': ' + str(exc))
+            return plans, errors
+        def done(result):
+            plans, errors = result
+            def apply(index, dialog):
+                dialog.accept()
+                preserve_old = preserve.isChecked()
+                def commit(cancel, progress):
+                    results = []
+                    for item in plans:
+                        playlists.check_cancel(cancel)
+                        results.append(playlist_revisions.apply(self.store, item, preserve_old, cancel))
+                        progress(dict(imported=len(results), total=len(plans)))
+                    return results
+                self.start(commit, lambda rows: self.preview('Playlist import results', '\n'.join(r['name'] + ': ' + str(r['matched']) for r in rows)))
+            dialog, table = self.table_dialog('Preview playlist changes', ['Playlist', 'Added', 'Removed', 'Unmatched paths:', 'Details'],
+                [(p['name'], p['added'], p['removed'], len(p['missing']), '\n'.join(p['missing'])) for p in plans],
+                [('Apply', lambda index, dialog: dialog.accept())] if plans else [])
+            preserve = QCheckBox(tr('Keep old entries missing from the new playlist'))
+            dialog.layout().insertWidget(0, preserve)
+            if errors:
+                label = QLabel('\n'.join(errors))
+                label.setWordWrap(True)
+                dialog.layout().insertWidget(0, label)
+            if dialog.exec() == QDialog.Accepted and plans:
+                apply(0, dialog)
         self.start(work, done)

@@ -1,0 +1,10 @@
+﻿{
+    "isolated_clean_windows":  false,
+    "installed":  true,
+    "catalog_preserved":  true,
+    "separate_acceptance_app_id":  true,
+    "uninstalled":  true,
+    "shortcut":  true,
+    "icon":  true,
+    "launched":  true
+}

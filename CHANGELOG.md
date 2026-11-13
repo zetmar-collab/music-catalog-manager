@@ -1,5 +1,34 @@
 # Historia zmian
 
+## 0.6.0 — 2026-11-13
+
+- Weryfikacja struktury i JSON bazy oraz przygotowanie przywracania przed podmianą aktywnego pliku.
+- Stała własność zagnieżdżonych folderów i atomowy zapis folder.jpg.
+- Poprawna tożsamość albumu, kolejność płyt i kontrola wszystkich 13 zapisywalnych pól.
+- CSV zabezpieczony przed formułami, pojedyncze zapytanie playlist i operacje kolejki/ZIP w tle; kopie strumieniowe obejmują używane okładki.
+- Jawne polecenia odtwarzania albumu/folderu, dodawania i odtwarzania następnego; opcjonalne pomijanie błędnych utworów.
+- Sesja z kolejką, pozycją i widokiem, monitorowanie folderów, inteligentne playlisty, podgląd i wersje importów.
+- Przenośna kolekcja z audio, przywracanie do nowego folderu, potwierdzana retencja kopii i odczyt ReplayGain.
+- Jedno źródło wersji, kontrola odcisku kodu w EXE przed MSIX, CI, Ruff i stopniowe typowanie usług.
+- Bez zmiany schematu 2. Instrukcje PL/EN: docs/FEATURES-0.6.0.md i pomoc F1.
+
+## 0.5.1 — 2026-11-04
+
+- Odtwarzanie nowo wybranego albumu lub folderu zastępuje kolejkę poprzedniego widoku, obejmując wszystkie strony wyników.
+- Automatyczne przejście do następnego nagrania po zakończeniu obsługi EndOfMedia w Qt.
+- Stop, zmiana nagrania i zwolnienie odtwarzacza anulują oczekujące przejście.
+- Zachowanie powtarzania utworu i kolejki oraz kolejnych identycznych plików w playliście.
+- MSIX 1.5.1.0 zawiera aplikację 0.5.1.
+
+## 0.5.0 — 2026-10-27
+
+- Usuwanie pojedynczego zarejestrowanego folderu i przypisanych do niego utworów z katalogu.
+- Czyszczenie całej biblioteki: utwory, foldery, playlisty, historia i odnośniki, z zachowaniem preferencji.
+- Podgląd zakresu, potwierdzenie i obowiązkowa automatyczna kopia katalogu przed usunięciem.
+- Transakcyjne usuwanie powiązań; brak zmian w muzyce i kopiach oryginalnego audio na dysku.
+- Reset filtrów i kolejki odtwarzania oraz aktualizacja pomocy PL/EN.
+- Pakowanie MSIX x64 1.5.0.0 z tożsamością Microsoft Store: pakiet niepodpisany oraz testowy podpisany istniejącym certyfikatem systemowym, test instalacji i aktywacji.
+
 ## 0.4.0 — 2026-10-27
 
 - Grupowanie i filtrowanie według playlisty z kolejnością i powtórzeniami wpisów.

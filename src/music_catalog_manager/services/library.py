@@ -10,6 +10,12 @@ KEYS.update({k: f't.{k}' for k in ('path', 'format', 'duration', 'root_id')})
 KEYS['status'] = STATUS
 KEYS['album_identity'] = "coalesce(nullif(json_extract(t.tags,'$.albumartist'),''),json_extract(t.tags,'$.artist'),'')"
 KEYS['playlist_position'] = 'pt.position'
+KEYS['album_order'] = KEYS['tracknumber']
+
+
+def album_identity(tags):
+    return tuple(' '.join(str(v).split()).casefold() for v in
+                 (tags.get('albumartist') or tags.get('artist', ''), tags.get('album', '')))
 
 
 class Library:
@@ -37,7 +43,15 @@ class Library:
             terms.append('a.path IS NULL')
         if duplicates:
             terms.append('t.sha256 IN (SELECT sha256 FROM tracks WHERE sha256 IS NOT NULL GROUP BY sha256 HAVING COUNT(*)>1)')
-        if playlist is not None:
+        if isinstance(playlist, str) and playlist.startswith('smart:'):
+            from music_catalog_manager.services.smart_playlists import compile_rules, get
+            try:
+                expression, values = compile_rules(get(self.store, playlist))
+            except StopIteration:
+                expression, values = '0', []
+            terms.append(expression)
+            params.extend(values)
+        elif playlist is not None:
             terms.append('t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id=?)')
             params.append(playlist)
         return (' WHERE ' + ' AND '.join(terms)) if terms else '', params
@@ -48,7 +62,7 @@ class Library:
             raise ValueError('Invalid page')
         where, params = self.where(query, filters, quick, duplicates, playlist)
         base = ' FROM tracks t LEFT JOIN artwork a ON a.track_id=t.id'
-        if playlist is not None:
+        if playlist is not None and not (isinstance(playlist, str) and playlist.startswith('smart:')):
             base += ' JOIN playlist_tracks pt ON pt.track_id=t.id AND pt.playlist_id=?'
             params = [playlist, *params]
         elif sort == 'playlist_position':
@@ -58,6 +72,8 @@ class Library:
             key = f'CAST({key} AS INTEGER)'
         elif sort not in ('duration', 'status', 'playlist_position'):
             key = f'CASEFOLD(CAST({key} AS TEXT))'
+        if sort == 'album_order':
+            key = f"CAST(coalesce(nullif({KEYS['discnumber']},''),'1') AS INTEGER),CAST({KEYS['tracknumber']} AS INTEGER),CASEFOLD(t.path)"
         with self.store.connection() as db:
             if cancel is not None:
                 db.set_progress_handler(lambda: int(cancel.is_set()), 1000)

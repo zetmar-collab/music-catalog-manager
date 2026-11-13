@@ -1,0 +1,24 @@
+﻿{
+    "version":  "1.5.0.0",
+    "profile":  "C:\\Users\\Marek\\Codex\\Katalog\\build\\msix-acceptance-9ef29ae2c5c840b5a159787441d9f1a0",
+    "installed":  true,
+    "activation":  true,
+    "smoke":  {
+                  "window_visible":  true,
+                  "version":  "0.5.0",
+                  "playback_controls":  true,
+                  "add_folder_label":  "Dodaj folder",
+                  "schema":  2,
+                  "icon_loaded":  true,
+                  "help_languages":  [
+                                         "pl",
+                                         "en"
+                                     ],
+                  "playlist_grouping":  true,
+                  "cover_search":  true,
+                  "catalog_cleanup":  true
+              },
+    "uninstalled":  true,
+    "package_family_name":  "MarekZettel-zetmar.MusicCatalogManager_411qrz2m02jw4",
+    "package_full_name":  "MarekZettel-zetmar.MusicCatalogManager_1.5.0.0_x64__411qrz2m02jw4"
+}

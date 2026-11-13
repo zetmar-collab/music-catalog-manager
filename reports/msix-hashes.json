@@ -1,0 +1,9 @@
+{
+  "AppxManifest.xml": "ccd852217779e806bbf0b8e80392c89f3ab65128174eeae7a42329df4b172ff8",
+  "build-result.json": "5886b26e4898b2a8628e46036bdb475a2923bc21879e3cf9b74ce59bab431aad",
+  "MusicCatalogManager-1.5.1.0-x64-Store-unsigned.msix": "b4c326755a53729197e4f6e766ca052616890848dfbf65c90e171a5dd62cf6d2",
+  "MusicCatalogManager-1.5.1.0-x64-Test-signed.msix": "8feda21567e5530a56ddd68397f5e41b5a26af061a549db8a64011da9330108a",
+  "MusicCatalogManager-Test-Public.cer": "adbb7e1ab5941903a064f25d544c6cbc1274eabef40a4e9ae1dc86b9027bd99e",
+  "README-MSIX.md": "01eaec2cbe5e47300b3446a92ea8d887c885ffa8d1a1eef659d8859ab5b697c2",
+  "validation-result.json": "05081cf48ade20084857290c4e75b64f41fdb1e1b58a4d15bb4cd36f73816a98"
+}

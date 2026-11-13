@@ -4,20 +4,32 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-catalog-manager"
-version = "0.4.0"
+dynamic = ["version"]
 description = "Local music library catalog for Windows"
 requires-python = ">=3.12,<3.13"
 license = "GPL-3.0-or-later"
 dependencies = ["PySide6-Essentials==6.12.0", "PySide6-Addons==6.12.0", "mutagen==1.48.1", "httpx==0.28.1", "Pillow==13.0.0"]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1", "pyinstaller==6.22.3"]
+dev = ["pytest==9.1.1", "pyinstaller==6.22.3", "ruff==0.17.5", "mypy==2.4.1"]
 
 [project.gui-scripts]
 music-catalog-manager = "music_catalog_manager.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "music_catalog_manager.__version__"}
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+files = ["src/music_catalog_manager/services/replaygain.py", "src/music_catalog_manager/services/smart_playlists.py", "src/music_catalog_manager/services/folder_watch.py", "src/music_catalog_manager/services/session.py"]
+follow_imports = "silent"
+ignore_missing_imports = true
+check_untyped_defs = true
 
 [tool.setuptools.package-data]
 music_catalog_manager = ["resources/*", "translations/*"]

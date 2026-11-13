@@ -279,6 +279,7 @@ def test_feature_dialogs_construct_and_close(store, monkeypatch):
     window.albums_dialog()
     window.folders_dialog()
     window.backups_dialog()
+    wait(lambda: window.worker is None)
     window.restore_audio_dialog()
     window.playlists_dialog()
     window.playback.queue_dialog()

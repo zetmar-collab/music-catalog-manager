@@ -39,10 +39,16 @@ def save(store, name, ids, playlist_id=None):
     return playlist_id
 
 
-def tracks(store, playlist_id):
+def tracks(store, playlist_id, cancel=None):
+    check_cancel(cancel)
     with store.connection() as db:
-        ids = [r[0] for r in db.execute('SELECT track_id FROM playlist_tracks WHERE playlist_id=? ORDER BY position', (playlist_id,))]
-    return [store.track(tid) for tid in ids]
+        if cancel is not None:
+            db.set_progress_handler(lambda: int(cancel.is_set()), 1000)
+        rows = [dict(r) for r in db.execute('SELECT t.*,a.path AS artwork FROM playlist_tracks pt JOIN tracks t ON t.id=pt.track_id LEFT JOIN artwork a ON a.track_id=t.id WHERE pt.playlist_id=? ORDER BY pt.position', (playlist_id,))]
+    for row in rows:
+        check_cancel(cancel)
+        row['tags'] = json.loads(row['tags'])
+    return rows
 
 
 def remove(store, playlist_id):
@@ -130,7 +136,12 @@ def import_file(store, path, cancel=None):
             target = Path(line)
             if not target.is_absolute():
                 target = path.parent / target
-            row = db.execute('SELECT id FROM tracks WHERE path=?', (normalized(target),)).fetchone()
+            # Lexical matching must not resolve arbitrary imported UNC paths or symlinks.
+            from music_catalog_manager.paths import windows_path, plain_path
+            key = os.path.normcase(os.path.abspath(os.path.normpath(plain_path(target))))
+            if os.name == 'nt' and len(key) >= 240:
+                key = windows_path(key)
+            row = db.execute('SELECT id FROM tracks WHERE path=?', (key,)).fetchone()
             if row:
                 ids.append(row[0])
             else:
@@ -172,6 +183,9 @@ def import_files(store, paths, root=None, cancel=None, progress=None, names=None
                 previous = db.execute('SELECT name FROM playlists WHERE id=?', (pid,)).fetchone() if pid else None
                 if previous:
                     name = previous[0]
+                    from music_catalog_manager.services.playlist_revisions import remember
+                    old = [r[0] for r in db.execute('SELECT track_id FROM playlist_tracks WHERE playlist_id=? ORDER BY position', (pid,))]
+                    remember(db, pid, name, old)
                     db.execute('DELETE FROM playlist_tracks WHERE playlist_id=?', (pid,))
                 else:
                     name, suffix = label, 2

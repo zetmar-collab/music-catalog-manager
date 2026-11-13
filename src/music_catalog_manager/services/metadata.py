@@ -8,9 +8,10 @@ import mutagen
 from mutagen import id3
 from mutagen.flac import Picture
 from mutagen.mp4 import MP4Cover
-from music_catalog_manager.database.store import FIELDS
+from music_catalog_manager.database.store import FIELDS, WRITABLE_FIELDS
 
 EXTENSIONS = {'.mp3', '.flac', '.m4a', '.mp4', '.ogg', '.opus', '.wav', '.wma', '.aif', '.aiff'}
+REPLAYGAIN_FIELDS = ('replaygain_track_gain', 'replaygain_track_peak', 'replaygain_album_gain', 'replaygain_album_peak')
 ID3 = dict(zip(FIELDS, ('TIT2', 'TPE1', 'TALB', 'TPE2', 'TCON', 'TDRC', 'TRCK', 'TPOS', 'TCOM', 'COMM')))
 MP4 = dict(zip(FIELDS, ('\xa9nam', '\xa9ART', '\xa9alb', 'aART', '\xa9gen', '\xa9day', 'trkn', 'disk', '\xa9wrt', '\xa9cmt')))
 ASF = dict(zip(FIELDS, ('Title', 'Author', 'WM/AlbumTitle', 'WM/AlbumArtist', 'WM/Genre', 'WM/Year', 'WM/TrackNumber', 'WM/PartOfSet', 'WM/Composer', 'Description')))
@@ -59,6 +60,15 @@ def read(path):
         else:
             v = tags.get('musicbrainz_trackid' if field == 'musicbrainz_recordingid' else field, []) or tags.get(field, [])
             result[field] = str(v[0]) if v else ''
+    for name in REPLAYGAIN_FIELDS:
+        if kind == 'id3':
+            frame = tags.get('TXXX:' + name) or tags.get('TXXX:' + name.upper())
+            values = frame.text if frame else []
+        elif kind == 'mp4':
+            values = tags.get('----:com.apple.iTunes:' + name, [])
+        else:
+            values = tags.get(name, [])
+        result[name] = (values[0].decode('utf-8', errors='replace') if isinstance(values[0], bytes) else str(values[0])) if values else ''
     image = None
     if kind == 'id3' and audio.tags:
         pictures = audio.tags.getall('APIC')
@@ -173,7 +183,7 @@ def write_safe(path, changes, image=None, backup_dir=None):
         _modify(temp, changes, image)
         check = read(temp)
         for key, value in changes.items():
-            if key in FIELDS and check['tags'].get(key, '') != value and not (key in ('tracknumber', 'discnumber') and check['tags'].get(key) == value + '/0'):
+            if key in WRITABLE_FIELDS and check['tags'].get(key, '') != value and not (key in ('tracknumber', 'discnumber') and check['tags'].get(key) == value + '/0'):
                 raise ValueError('Tag verification failed: ' + key)
         if temp.stat().st_size == 0:
             raise ValueError('Empty output')

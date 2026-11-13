@@ -1,6 +1,7 @@
 """Library navigation and feature dialogs, separate from file editing workflows."""
 import json
 import uuid
+from zipfile import BadZipFile
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt, QSize
@@ -58,11 +59,22 @@ class LibraryViews:
         self.tools_menu = self.menuBar().addMenu(tr('Tools'))
         self.selection_actions = []
         commands = [('Find metadata', self.find_metadata, True), ('Album metadata', self.album_metadata, True),
+                    ('Play selection', lambda: self.request_playback_queue(self.selected()), True),
+                    ('Add to queue', lambda: self.request_playback_queue(self.selected(), mode='append'), True),
+                    ('Play next', lambda: self.request_playback_queue(self.selected(), mode='next'), True),
+                    ('Play album', lambda: self.play_scope('album'), True),
+                    ('Play folder', lambda: self.play_scope('folder'), True),
                     ('Artwork', self.artwork_dialog, True), ('Rename', self.rename_tracks, True),
                     ('Find cover online', self.search_cover_dialog, True), ('Choose local image', self.choose_local_cover, True),
                     ('Import playlists from folder', self.import_playlist_folder, False),
                     ('Tags from filename', self.tags_from_filename, True),
                     ('Save selection as playlist', self.save_playlist, True),
+                    ('Smart playlists', self.smart_playlists_dialog, False),
+                    ('Playlist revisions', self.playlist_revisions_dialog, False),
+                    ('Skipped tracks', self.skipped_tracks_dialog, False),
+                    ('Portable collection backup', self.create_portable_collection, False),
+                    ('Restore portable collection', self.restore_portable_collection, False),
+                    ('Backup retention', self.backup_retention_dialog, False),
                     ('Compare recordings', self.compare_recordings, False),
                     ('Create backup', self.create_backup, False), ('Restore original audio', self.restore_audio_dialog, False),
                     ('Collection quality', self.quality_dialog, False), ('Track details', self.track_details_dialog, True),
@@ -74,6 +86,9 @@ class LibraryViews:
             action.triggered.connect(lambda checked=False, fn=callback: self.guarded(fn) if not self.worker else None)
             if needs_selection:
                 self.selection_actions.append(action)
+        self.tools_menu.addSeparator()
+        clear_action = self.tools_menu.addAction(tr('Clear entire library'))
+        clear_action.triggered.connect(lambda: self.guarded(self.clear_library_dialog))
         columns = self.menuBar().addMenu(tr('Columns'))
         for index, (_, label) in enumerate(COLUMNS):
             action = columns.addAction(tr(label))
@@ -86,6 +101,18 @@ class LibraryViews:
         self.table.customContextMenuRequested.connect(lambda point: self.tools_menu.exec(self.table.viewport().mapToGlobal(point)))
         self.table.selectionModel().selectionChanged.connect(self.selection_actions_changed)
         self.selection_actions_changed()
+
+    def play_scope(self, scope, record=None, mode='play'):
+        if record is None:
+            selected = self.selected()
+            if not selected:
+                return
+            record = selected[0]
+        filters = {'root_id': record['root_id']} if scope == 'folder' else {
+            'album': record['tags'].get('album', ''),
+            'album_identity': record['tags'].get('albumartist') or record['tags'].get('artist', '')}
+        options = dict(filters=filters, sort='album_order' if scope == 'album' else 'path')
+        self.request_playback_queue(mode=mode, options=options)
 
     def selection_actions_changed(self, *_):
         selected = bool(self.table.selectionModel().selectedRows())
@@ -162,6 +189,32 @@ class LibraryViews:
                     combo.blockSignals(False)
                 self.facets_dirty = False
                 self.populate_groups()
+            if getattr(self, 'pending_view', None):
+                saved, self.pending_view = self.pending_view, None
+                restored_options = saved.get('options', {})
+                for key, combo in self.combos.items():
+                    combo.blockSignals(True)
+                    combo.setCurrentIndex(max(0, combo.findData(restored_options.get('filters', {}).get(key, ''))))
+                    combo.blockSignals(False)
+                self.search.blockSignals(True)
+                self.search.setText(restored_options.get('query', ''))
+                self.search.blockSignals(False)
+                self.quick_filter.blockSignals(True)
+                self.quick_filter.setCurrentIndex(max(0, self.quick_filter.findData(restored_options.get('quick', ''))))
+                self.quick_filter.blockSignals(False)
+                self.album_artist_filter = restored_options.get('filters', {}).get('album_identity')
+                self.proxy.duplicates = bool(restored_options.get('duplicates', False))
+                self.group.blockSignals(True)
+                self.group.setCurrentIndex(max(0, min(4, saved.get('group', 0))))
+                self.group.blockSignals(False)
+                self.active_playlist = restored_options.get('playlist')
+                self.populate_groups()
+                self.groups.blockSignals(True)
+                self.groups.setCurrentIndex(max(0, self.groups.findData(saved.get('group_value'))))
+                self.groups.blockSignals(False)
+                self.loading_library = False
+                self.load_library()
+                return
             self.loading_library = False
             self.table.setEnabled(True)
             self.previous_page.setEnabled(offset > 0)
@@ -216,6 +269,9 @@ class LibraryViews:
         if self.group.currentIndex() == 4:
             for item in playlists.lists(self.store):
                 self.groups.addItem(f"{item['name']} ({item['tracks']})", item['id'])
+            from music_catalog_manager.services.smart_playlists import lists as smart_lists
+            for item in smart_lists(self.store):
+                self.groups.addItem('★ ' + item['name'], item['id'])
         elif key:
             source = self.combos[key]
             for i in range(1, source.count()):
@@ -251,11 +307,13 @@ class LibraryViews:
         self.load_library()
 
     def save_layout(self):
+        self.store.set_setting('library_view', dict(options=self.library_options(), group=self.group.currentIndex(), group_value=self.groups.currentData()))
         self.store.set_setting('window_layout', dict(geometry=bytes(self.saveGeometry()).hex(),
             header=bytes(self.table.horizontalHeader().saveState()).hex(), splitter=self.splitter.sizes(),
             sort=self.query_sort, descending=self.query_descending))
 
     def restore_layout(self):
+        self.pending_view = self.store.setting('library_view')
         saved = self.store.setting('window_layout', {})
         try:
             if saved.get('geometry'):
@@ -340,12 +398,23 @@ class LibraryViews:
             combo = self.combos['album']
             combo.setCurrentIndex(max(0, combo.findData(album['album'])))
             self.album_artist_filter = album['artist']
-            self.table.sortByColumn(9, Qt.AscendingOrder)
+            self.query_sort, self.query_descending = 'album_order', False
             self.update_filter()
             dialog.accept()
         view.itemDoubleClicked.connect(open_album)
         search.textChanged.connect(lambda text: [view.item(i).setHidden(text.casefold() not in view.item(i).text().casefold()) for i in range(view.count())])
         layout.addWidget(view)
+        controls = QHBoxLayout()
+        for label, mode in [('Play album', 'play'), ('Add to queue', 'append'), ('Play next', 'next')]:
+            def queue_album(checked=False, mode=mode):
+                item = view.currentItem()
+                if item:
+                    album = item.data(Qt.UserRole)
+                    record = dict(tags=dict(album=album['album'], albumartist=album['artist']))
+                    dialog.accept()
+                    self.play_scope('album', record, mode)
+            self.button(label, queue_album, controls)
+        layout.addLayout(controls)
         close = QPushButton(tr('Close'))
         close.clicked.connect(dialog.reject)
         layout.addWidget(close)
@@ -353,6 +422,10 @@ class LibraryViews:
 
     def folders_dialog(self):
         rows = self.library.folders()
+        def queue(index, dialog, mode):
+            if index >= 0:
+                dialog.accept()
+                self.request_playback_queue(mode=mode, options=dict(filters={'root_id': rows[index]['id']}, sort='path'))
         def rescan(index, dialog):
             if index >= 0:
                 dialog.accept()
@@ -365,19 +438,30 @@ class LibraryViews:
             if target and self.confirm(root['path'] + ' → ' + target):
                 dialog.accept()
                 self.start(lambda cancel, progress: self.store.relink(root['id'], target), lock_playback=True)
+        def remove(index, dialog):
+            if index >= 0 and self.remove_folder_dialog(rows[index]['id']):
+                dialog.accept()
         dialog, _ = self.table_dialog('Folders', ['Folder', 'Tracks', 'Available', 'Last scan'],
             [(r['path'], r['tracks'], r['available'], r['scanned'] or '—') for r in rows],
-            [('Rescan', rescan), ('New location', relink)])
+            [('Play folder', lambda i, d: queue(i, d, 'play')), ('Add to queue', lambda i, d: queue(i, d, 'append')),
+             ('Play next', lambda i, d: queue(i, d, 'next')), ('Rescan', rescan), ('New location', relink), ('Remove folder from catalog', remove)])
         dialog.exec()
 
-    def backups_dialog(self):
+    def backups_dialog(self, entries=None):
+        if entries is None:
+            def collect(cancel, progress):
+                rows = []
+                for path in self.store.profile.glob('*.zip'):
+                    backup.check_cancel(cancel)
+                    try:
+                        rows.append((path, backup.describe(path)))
+                    except (OSError, ValueError, KeyError, BadZipFile):
+                        continue
+                return rows
+            self.start(collect, self.backups_dialog)
+            return
         rows = []
-        for path in self.store.profile.glob('*.zip'):
-            try:
-                manifest = backup.inspect(path)
-                rows.append((path, manifest))
-            except Exception:
-                continue
+        rows = entries
         def restore(index, dialog):
             if index >= 0 and self.confirm(tr('Replace current library? A safety backup will be created. Audio files are not restored.')):
                 dialog.accept()
@@ -421,7 +505,9 @@ class LibraryViews:
         rows = playlists.lists(self.store)
         def play(index, dialog):
             if index >= 0:
-                self.playback.set_queue(playlists.tracks(self.store, rows[index]['id']))
+                pid = rows[index]['id']
+                dialog.accept()
+                self.start(lambda cancel, progress: playlists.tracks(self.store, pid, cancel), self.playback.set_queue)
         def show(index, dialog):
             if index >= 0:
                 self.clear_filters()
@@ -432,32 +518,22 @@ class LibraryViews:
             if index >= 0:
                 path, _ = QFileDialog.getSaveFileName(self, tr('Export'), rows[index]['name'] + '.m3u8', 'M3U (*.m3u8 *.m3u)')
                 if path:
-                    playlists.export_m3u(path, playlists.tracks(self.store, rows[index]['id']))
+                    pid = rows[index]['id']
+                    dialog.accept()
+                    self.start(lambda cancel, progress: playlists.export_m3u(path, playlists.tracks(self.store, pid)))
         def import_list(index, dialog):
             from music_catalog_manager.ui.playlist_import import PLAYLIST_FILTER
             path, _ = QFileDialog.getOpenFileName(self, tr('Import playlist'), '', PLAYLIST_FILTER)
             if not path:
                 return
             dialog.accept()
-            def done(result):
-                ids, missing = result
-                name, ok = QInputDialog.getText(self, tr('Playlist'), tr('Name'), text=Path(path).stem)
-                if ok and self.preview('Import playlist', tr('Matched tracks:') + f' {len(ids)}\n' + tr('Unmatched paths:') + '\n' + '\n'.join(missing)):
-                    if not name.strip():
-                        raise ValueError(tr('Playlist name is required'))
-                    from music_catalog_manager.database.store import normalized
-                    def saved(results):
-                        if results[0]['error']:
-                            self.error(results[0]['error'])
-                    self.start(lambda cancel, progress: playlists.import_files(self.store, [Path(path)], cancel=cancel,
-                        progress=progress, names={normalized(path): name.strip()}), saved)
-            self.start(lambda cancel, progress: playlists.import_file(self.store, path, cancel), done)
+            self.import_playlist_paths([Path(path)])
         def edit(index, dialog):
             if index < 0:
                 return
-            self.edit_playlist(rows[index])
-            self.refresh()
             dialog.accept()
+            item = rows[index]
+            self.start(lambda cancel, progress: playlists.tracks(self.store, item['id'], cancel), lambda tracks: self.edit_playlist(item, tracks))
         def remove(index, dialog):
             if index >= 0 and self.confirm(tr('Delete playlist?') + '\n' + rows[index]['name']):
                 playlists.remove(self.store, rows[index]['id'])
@@ -471,7 +547,7 @@ class LibraryViews:
              ('Import playlists from folder', import_folder), ('Export', export), ('Delete', remove)])
         dialog.exec()
 
-    def edit_playlist(self, playlist):
+    def edit_playlist(self, playlist, tracks=None):
         dialog = QDialog(self)
         dialog.setWindowTitle(playlist['name'])
         dialog.resize(700, 500)
@@ -479,7 +555,7 @@ class LibraryViews:
         layout.addWidget(QLabel(tr('Drag tracks to reorder. Select and remove unwanted entries.')))
         view = QListWidget()
         view.setDragDropMode(QAbstractItemView.InternalMove)
-        for row in playlists.tracks(self.store, playlist['id']):
+        for row in (tracks if tracks is not None else playlists.tracks(self.store, playlist['id'])):
             item = QListWidgetItem((row['tags'].get('title') or Path(row['path']).name) + ' — ' + row['tags'].get('artist', ''))
             item.setData(Qt.UserRole, row['id'])
             view.addItem(item)
@@ -563,7 +639,8 @@ class LibraryViews:
         tracks = self.selected()
         if not tracks:
             return
-        albums = {organize.normalized_name(t['tags'].get('album', '')) for t in tracks}
+        from music_catalog_manager.services.library import album_identity
+        albums = {album_identity(t['tags']) for t in tracks}
         if len(albums) != 1:
             QMessageBox.information(self, tr('Album metadata'), tr('Select tracks from one album.'))
             return

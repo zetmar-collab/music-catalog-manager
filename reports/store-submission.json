@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-28",
+  "product": "Music Catalog Manager",
+  "store_id": "9P44BDRDZFJX",
+  "submission_id": "1152921505702251515",
+  "package_version": "1.5.0.0",
+  "price": "Free (0 PLN base price, worldwide markets)",
+  "languages": [
+    "en-US",
+    "pl-PL"
+  ],
+  "screenshots_per_language": 2,
+  "category": "Music",
+  "privacy_policy": "Text provided directly in Partner Center",
+  "support_url": "https://github.com/zetmar-collab/music-catalog-manager/issues",
+  "certification_notes_saved": true,
+  "status": "In certification",
+  "phase": "Pre-processing",
+  "publish_after_certification": true,
+  "partner_center_url": "https://partner.microsoft.com/en-us/dashboard/products/9P44BDRDZFJX/overview"
+}

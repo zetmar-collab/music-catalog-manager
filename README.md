@@ -1,10 +1,10 @@
-# Music Catalog Manager 0.4.0
+# Music Catalog Manager 0.6.0
 
 Lokalny katalog muzyki z odtwarzaczem dla Windows 10/11 x64, Python 3.12 i Qt/PySide6. Nie wymaga konta ani dostępu do internetu do katalogowania i odtwarzania własnych plików. Nie pobiera muzyki.
 
 ## Pliki wydania
 
-Wydanie Windows 10/11 x64:
+Wydanie opublikowane na GitHubie: 0.4.0, Windows 10/11 x64. Lokalna wersja rozwojowa: 0.6.0. Instrukcja nowych funkcji PL/EN: [docs/FEATURES-0.6.0.md](docs/FEATURES-0.6.0.md).
 
 - [Instalator Windows 0.4.0](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-Setup.exe)
 - [Wersja przenośna ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-portable.zip)
@@ -14,11 +14,13 @@ Wydanie Windows 10/11 x64:
 
 Archiwalne wydania: [0.2.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.2.0), [0.1.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.1.0).
 
+Lokalne pakiety MSIX x64 są w `dist/MSIX-1.6.0.0`: niepodpisany do Microsoft Store i podpisany do testów. Wersja pakietu 1.6.0.0 zawiera aplikację 0.6.0. [Instrukcja MSIX i dane tożsamości](docs/MSIX.md) opisuje budowanie, certyfikat, instalację testową i dalszą walidację WACK.
+
 ![Music Catalog Manager — biblioteka muzyczna, okładka i szczegóły utworu](docs/screenshot.png)
 
 ## Uruchomienie
 
-Gotowy program: `dist\MusicCatalogManager\MusicCatalogManager.exe`. Cały folder jest potrzebny do uruchomienia wersji przenośnej. Instalator: `dist\MusicCatalogManager-0.4.0-Setup.exe`. Aktualizacja zachowuje dotychczasową bibliotekę i ustawienia; migruje schemat bazy 1 → 2. Wersja 0.2.0 nie otworzy profilu po migracji. Przed aktualizacją wykonaj kopię katalogu.
+Gotowy program: `dist\MusicCatalogManager\MusicCatalogManager.exe`. Cały folder jest potrzebny do uruchomienia wersji przenośnej. Instalator: `dist\MusicCatalogManager-0.6.0-Setup.exe`. Aktualizacja zachowuje dotychczasową bibliotekę i ustawienia; migruje schemat bazy 1 → 2. Wersja 0.2.0 nie otworzy profilu po migracji. Przed aktualizacją wykonaj kopię katalogu.
 
 Ze źródeł, w PowerShell w katalogu projektu:
 
@@ -35,6 +37,18 @@ Do pracy na oddzielnym profilu:
 ```
 
 Dane domyślnie trafiają do `%LOCALAPPDATA%\MusicCatalogManager`. Kod i pliki instalacyjne są oddzielone od biblioteki użytkownika. Nie uruchamiaj dwóch instancji na tym samym profilu podczas przywracania kopii. Program zawiera blokadę pojedynczego profilu.
+
+## Poprawka 0.5.1
+
+Odtwarzanie po wybraniu nowego albumu lub folderu buduje kolejkę całego aktualnego widoku, także poza bieżącą stroną tabeli. Zakończenie utworu przełącza źródło dopiero po zakończeniu obsługi sygnału Qt. Pauza w tym samym widoku zachowuje kolejkę; Stop i zamknięcie odtwarzacza anulują oczekujące przejście.
+
+## Nowości 0.5.0
+
+- **Foldery → Usuń folder z katalogu** usuwa wskazaną lokalizację i przypisane do niej utwory z bazy, wraz z ich wpisami w playlistach, historią i rejestrem kopii audio. Pozostałe lokalizacje i same playlisty pozostają.
+- **Narzędzia → Wyczyść całą bibliotekę** usuwa utwory, foldery, playlisty, historię, odnośniki okładek i rejestr kopii audio; zachowuje język, motyw i inne ustawienia.
+- Obie funkcje pokazują zakres i wymagają potwierdzenia, zatrzymują odtwarzanie i tworzą automatyczną kopię ZIP katalogu w profilu. Błąd kopii blokuje usuwanie. Zmiany bazy są transakcyjne. Muzyka, folder.jpg, cache oraz oryginalne kopie audio nie są usuwane z dysku.
+- Odzyskanie zapisów: **Kopie zapasowe → Przywróć kopię**, wybierz `before-remove-folder-*.zip` albo `before-clear-library-*.zip`. Zwykłe cofnięcie edycji nie odwraca tych operacji.
+- Pomoc PL/EN opisuje obie nowe funkcje; schemat bazy pozostaje 2.
 
 ## Nowości 0.4.0
 
@@ -128,7 +142,7 @@ PyInstaller tworzy folder z EXE i dynamicznymi bibliotekami Qt. Inno Setup dodaj
 
 ## Weryfikacja i granice wersji
 
-Raport zmian 0.4.0: [reports/UPGRADE-0.4.0.md](reports/UPGRADE-0.4.0.md). Raport zmian 0.3.0: [reports/UPGRADE-0.3.0.md](reports/UPGRADE-0.3.0.md). Historyczny raport odtwarzacza 0.2.0: [reports/PLAYBACK.md](reports/PLAYBACK.md). Pierwotny raport etapów 0.1.0: `reports/IMPLEMENTATION.md`. Raport maszynowy: `reports/pytest.xml`. Testy:
+Raport poprawki 0.5.1: [reports/UPGRADE-0.5.1.md](reports/UPGRADE-0.5.1.md). Raport zmian 0.5.0: [reports/UPGRADE-0.5.0.md](reports/UPGRADE-0.5.0.md). Raport zmian 0.4.0: [reports/UPGRADE-0.4.0.md](reports/UPGRADE-0.4.0.md). Raport zmian 0.3.0: [reports/UPGRADE-0.3.0.md](reports/UPGRADE-0.3.0.md). Historyczny raport odtwarzacza 0.2.0: [reports/PLAYBACK.md](reports/PLAYBACK.md). Pierwotny raport etapów 0.1.0: `reports/IMPLEMENTATION.md`. Raport maszynowy: `reports/pytest.xml`. Testy:
 
 ```powershell
 .venv\Scripts\python.exe -m pytest -q --junitxml=reports\pytest.xml
@@ -139,3 +153,17 @@ Program testowano na bieżącym Windows, ze sztucznymi plikami i osobnymi profil
 Przerwanie procesu w trakcie zbiorczej operacji może pozostawić część plików już zmienionych. Każdy zapis tagów jest atomowy dla jednego pliku; zestaw wielu plików nie jest jedną transakcją systemu plików. Wykryte błędy zmiany nazw uruchamiają rollback, ale po awarii całego procesu ponów skan, aby wykryć nowe ścieżki po identyfikatorze pliku. Nie należy równocześnie modyfikować kolekcji innym edytorem.
 
 Pełne tłumaczenia etykiet aplikacji są w oddzielnym `translations/pl.json`, używanym przez `QTranslator`; EN jest językiem źródłowym. Natywne okna systemowe używają języka systemu. Szczegóły techniczne błędów i dziennik mogą zawierać oryginalny angielski tekst biblioteki. To ograniczenie lokalizacji tej wersji.
+
+## Wydawanie i kontrola jakości
+
+Źródło wersji: `src/music_catalog_manager/resources/release.json`. Po zmianie uruchom `python scripts/release.py`, a następnie `python scripts/release.py --check`. Wersje Inno Setup i manifest MSIX są generowane lub sprawdzane względem tego pliku.
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check src tests scripts
+.\.venv\Scripts\python.exe -m mypy
+.\.venv\Scripts\python.exe -m pytest -q
+powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_msix.ps1
+```
+
+Budowanie EXE zapisuje odcisk źródeł do zasobów pakietu. Budowanie MSIX uruchamia rzeczywisty EXE na osobnym profilu i odrzuca niezgodną wersję lub odcisk. CI sprawdza wersje, błędy krytyczne Ruff, typowanie nowych usług i testy na Windows. WACK i test aktualizacji na czystej maszynie Windows pozostają osobnymi etapami przed publikacją.

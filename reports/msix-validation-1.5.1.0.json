@@ -1,0 +1,15 @@
+{
+  "identity": {
+    "Name": "MarekZettel-zetmar.MusicCatalogManager",
+    "Publisher": "CN=15A53D32-C868-48EE-B700-5DBB5449CA1B",
+    "Version": "1.5.1.0",
+    "ProcessorArchitecture": "x64"
+  },
+  "makeappx_validation": true,
+  "signature_verified": true,
+  "unsigned_without_signature": true,
+  "matching_payloads": true,
+  "archive_integrity": true,
+  "installation_test_performed": false,
+  "installation_test_reason": "An existing MSIX 1.5.0.0 installation was preserved."
+}

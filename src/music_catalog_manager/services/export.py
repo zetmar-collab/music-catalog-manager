@@ -9,6 +9,12 @@ from music_catalog_manager.services.library import Library
 from music_catalog_manager.services.musicbrainz import Cancelled
 
 
+def spreadsheet_text(value):
+    value = str(value or '')
+    # Quote dangerous cell prefixes; CSV quoting alone does not disable formulas.
+    return "'" + value if value.lstrip(' \t\r\n').startswith(('=', '+', '-', '@')) or value.startswith(('\t', '\r', '\n')) else value
+
+
 def export_library(store, options, destination, cancel, progress):
     destination = Path(destination)
     fd, name = tempfile.mkstemp(prefix='.mcm-export-', dir=destination.parent)
@@ -27,7 +33,7 @@ def export_library(store, options, destination, cancel, progress):
                 if cancel.is_set():
                     raise Cancelled()
                 if is_csv:
-                    writer.writerow({'path': row['path'], 'format': row['format'], **{k: row['tags'].get(k, '') for k in FIELDS}})
+                    writer.writerow({k: spreadsheet_text(v) for k, v in {'path': row['path'], 'format': row['format'], **{k: row['tags'].get(k, '') for k in FIELDS}}.items()})
                 else:
                     if count:
                         out.write(',\n')

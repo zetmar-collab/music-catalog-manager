@@ -7,6 +7,14 @@ from pathlib import Path
 from music_catalog_manager.paths import windows_path, plain_path
 
 FIELDS = ('title', 'artist', 'album', 'albumartist', 'genre', 'date', 'tracknumber', 'discnumber', 'composer', 'comment')
+WRITABLE_FIELDS = FIELDS + ('musicbrainz_recordingid', 'musicbrainz_albumid', 'isrc')
+
+
+def owner(path, roots):
+    """The deepest registered ancestor owns a file, regardless of scan order."""
+    target = Path(windows_path(path))
+    matches = [r for r in roots if target.is_relative_to(Path(windows_path(r['path'])))]
+    return max(matches, key=lambda r: len(Path(r['path']).parts))['id'] if matches else None
 
 
 def normalized(path):
@@ -92,7 +100,13 @@ class Store:
         path = normalized(path)
         with self.connection() as db:
             db.execute('INSERT OR IGNORE INTO library_roots(path) VALUES(?)', (path,))
+            self.reconcile_roots(db)
             return db.execute('SELECT id FROM library_roots WHERE path=?', (path,)).fetchone()[0]
+
+    def reconcile_roots(self, db):
+        roots = [dict(r) for r in db.execute('SELECT * FROM library_roots')]
+        changes = [(owner(r['path'], roots), r['id']) for r in db.execute('SELECT id,path FROM tracks')]
+        db.executemany('UPDATE tracks SET root_id=? WHERE id=?', changes)
 
     def tracks(self):
         with self.connection() as db:
@@ -111,7 +125,7 @@ class Store:
         return result
 
     def edit(self, ids, changes, operation_id=None):
-        if set(changes) - set(FIELDS) - {'musicbrainz_recordingid', 'musicbrainz_albumid', 'isrc'}:
+        if set(changes) - set(WRITABLE_FIELDS):
             raise ValueError('Unknown field')
         operation_id = operation_id or uuid.uuid4().hex
         with self.connection() as db:
@@ -147,10 +161,24 @@ class Store:
             db.execute('INSERT INTO operation_history(kind,track_id,before_data,after_data) VALUES(?,?,?,?)',
                        (kind, tid, json.dumps(before), json.dumps(after)))
 
-    def mark_availability(self):
+    def mark_availability(self, root_id=None, cancel=None, folders=None):
         with self.connection() as db:
-            for row in db.execute('SELECT id,path FROM tracks').fetchall():
-                db.execute('UPDATE tracks SET available=? WHERE id=?', (int(Path(row['path']).is_file()), row['id']))
+            rows = db.execute('SELECT id,path FROM tracks' + (' WHERE root_id=?' if root_id is not None else ''),
+                              (root_id,) if root_id is not None else ()).fetchall()
+            for row in rows:
+                if cancel is not None and cancel.is_set():
+                    break
+                if folders is not None and not any(Path(windows_path(row['path'])).is_relative_to(Path(windows_path(p))) for p in folders):
+                    continue
+                try:
+                    exists = Path(row['path']).stat().st_mode
+                    import stat
+                    available = stat.S_ISREG(exists)
+                except (FileNotFoundError, NotADirectoryError):
+                    available = False
+                except OSError:
+                    continue
+                db.execute('UPDATE tracks SET available=? WHERE id=?', (int(available), row['id']))
 
     def relink(self, root_id, new_path):
         new_path = Path(new_path).resolve()
@@ -162,3 +190,4 @@ class Store:
                 target = Path(windows_path(new_path)) / relative
                 db.execute('UPDATE tracks SET path=?,available=? WHERE id=?', (normalized(target), int(target.is_file()), row['id']))
             db.execute('UPDATE library_roots SET path=? WHERE id=?', (normalized(new_path), root_id))
+            self.reconcile_roots(db)

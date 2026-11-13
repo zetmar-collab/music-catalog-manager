@@ -1,0 +1,9 @@
+This is a free, standalone x64 desktop application built with Python and Qt. No account, subscription, purchase or activation key is required. The package version is 1.5.0.0; the application version is 0.5.0.
+
+To test: launch Music Catalog Manager, select Add folder and choose a folder containing your test audio files. Scan the folder, select a track and choose Play. Edit tags in the catalog, then use Write to files to apply changes to the selected audio files. Test only with copies of your audio files. Playlists can be imported from a folder and its subfolders. Offline help is available from Help / F1, with Polish and English versions.
+
+The runFullTrust capability is required because this is a classic desktop application that reads user-selected music folders, plays local audio, edits file metadata, writes album artwork and manages local SQLite catalog backups. It does not require administrator privileges. No broadFileSystemAccess capability is declared.
+
+Local cataloging and playback work offline. Optional metadata and cover search uses MusicBrainz and Cover Art Archive. Cover search can use the built-in project contact URL. Other metadata actions may require a developer contact URL or email in Settings for the MusicBrainz User-Agent; the project URL https://github.com/zetmar-collab/music-catalog-manager can be used. No user login is needed. The app does not download music recordings.
+
+The signed test package was installed, launched through Windows application activation and uninstalled successfully on the development computer. The package family name matched the Partner Center identity. MakeAppx validation and SignTool signature verification passed. A full Windows App Certification Kit run and clean-VM testing have not been completed.

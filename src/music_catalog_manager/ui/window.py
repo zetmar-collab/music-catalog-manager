@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
     QLineEdit, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QSplitter, QTableView, QVBoxLayout, QWidget, QScrollArea)
 
-from music_catalog_manager.database.store import FIELDS
+from music_catalog_manager.database.store import FIELDS, WRITABLE_FIELDS
 from music_catalog_manager.services import backup, metadata, rename
 from music_catalog_manager.services.artwork import cache_image, folder_image, validate_image
 from music_catalog_manager.services.musicbrainz import MusicBrainz
@@ -24,6 +24,8 @@ from music_catalog_manager.ui.widgets import ArtworkLabel
 from music_catalog_manager.ui.cover_views import CoverViews
 from music_catalog_manager.ui.playlist_import import PlaylistImportViews
 from music_catalog_manager.ui.help_view import HelpViews
+from music_catalog_manager.ui.cleanup_views import CleanupViews
+from music_catalog_manager.ui.advanced_views import AdvancedViews
 
 
 def tr(text):
@@ -36,7 +38,7 @@ from music_catalog_manager.services.library import Library
 from music_catalog_manager.services import audio_backups
 
 
-class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMainWindow):
+class MainWindow(AdvancedViews, CleanupViews, CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMainWindow):
     def __init__(self, store):
         super().__init__()
         self.store = store
@@ -66,6 +68,9 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         self.apply_theme(store.setting('theme', 'system'))
         self.restore_layout()
         self.refresh()
+        self.restore_playback_session()
+        from music_catalog_manager.ui.folder_monitor import FolderMonitor
+        self.folder_monitor = FolderMonitor(self)
 
     def button(self, text, handler, layout):
         button = QPushButton(tr(text))
@@ -80,6 +85,7 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
     def build(self):
         self.building = True
         if hasattr(self, 'playback'):
+            self.playback.save_session()
             self.playback.release()
         central = QWidget()
         shell = QWidget()
@@ -225,7 +231,8 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         detail.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([160, 930, 270])
-        self.playback = PlaybackBar(self.store, self.selected, self.visible_tracks, self)
+        self.playback = PlaybackBar(self.store, self.selected, self.visible_tracks, self, context=self.playback_context)
+        self.playback.request_queue = self.request_playback_queue
         shell_layout.addWidget(self.playback)
         status = QHBoxLayout()
         shell_layout.addLayout(status)
@@ -278,6 +285,36 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
     def visible_tracks(self):
         return list(self.library.all(**self.library_options()))
 
+    def request_playback_queue(self, tracks=None, start_id=None, mode='play', options=None):
+        if self.worker:
+            return
+        options = options if options is not None else self.library_options()
+        context = self.playback_context()
+        def loaded(rows):
+            if mode == 'play':
+                if not rows:
+                    self.playback.release()
+                    return
+                self.playback.set_queue(rows, start_id)
+                self.playback.queue_context = context
+            else:
+                self.playback.enqueue(rows, next_up=mode == 'next')
+        self.start(lambda cancel, progress: tracks if tracks is not None else list(self.library.all(cancel=cancel, **options)), loaded)
+
+    def restore_playback_session(self):
+        from music_catalog_manager.services import session
+        if not self.store.setting('playback_session', {}).get('queue'):
+            return
+        worker = Worker(lambda cancel, progress: session.load(self.store, cancel), self)
+        self.query_workers.add(worker)
+        worker.result.connect(lambda result: self.playback.restore_session(result) if not self.closing and not self.playback.queue and self.playback.player is None and self.worker is None else None)
+        worker.finished.connect(lambda: (self.query_workers.discard(worker), worker.deleteLater()))
+        worker.start()
+
+    def playback_context(self):
+        # Paging and sorting the table do not change the scope of an existing queue.
+        return {key: value for key, value in self.library_options().items() if key not in ('sort', 'descending')}
+
     def play_index(self, index):
         if index.isValid():
             self.playback.play_track(self.model.rows[self.proxy.mapToSource(index).row()])
@@ -287,6 +324,8 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         self.load_library()
 
     def update_filter(self, *_):
+        if hasattr(self, 'playback'):
+            self.playback.update_controls()
         self.page_offset = 0
         self.load_library()
 
@@ -392,6 +431,8 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
     def start(self, function, done=None, lock_playback=False):
         if self.worker:
             return
+        if hasattr(self, 'folder_monitor'):
+            self.folder_monitor.stop()
         self.tools_menu.setEnabled(False)
         self.cover_online_button.setEnabled(False)
         self.cover_local_button.setEnabled(False)
@@ -433,6 +474,8 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
             self.guarded(lambda: callback(result[0]))
         if self.closing:
             self.close()
+        elif hasattr(self, 'folder_monitor'):
+            self.folder_monitor.schedule()
 
     def cancel(self):
         if self.worker:
@@ -449,7 +492,8 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
             for root in roots:
                 if cancel.is_set():
                     break
-                results.append(scan(self.store, root['id'], cancel, progress, hashes))
+                root_id = root.get('id') or self.store.add_root(root['path'])
+                results.append(scan(self.store, root_id, cancel, progress, hashes))
             return results
         def done(results):
             self.refresh()
@@ -460,8 +504,7 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
     def add_folder(self):
         path = QFileDialog.getExistingDirectory(self, tr('Add folder'))
         if path:
-            rid = self.store.add_root(path)
-            self.scan_roots([{'id': rid}])
+            self.scan_roots([{'path': path}])
 
     def rescan(self):
         roots = self.store.roots()
@@ -534,7 +577,7 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
                             # Pending database fields remain pending unless the complete tag set was written.
                             pending = self.store.track(track['id'])['tags']
                             actual = metadata.read(track['path'])['tags']
-                            dirty = int(any(actual.get(k, '') != pending.get(k, '') for k in FIELDS))
+                            dirty = int(any(actual.get(k, '') != pending.get(k, '') for k in WRITABLE_FIELDS))
                             db.execute('UPDATE tracks SET mtime=?,size=?,sha256=NULL,dirty=?,file_key=? WHERE id=?', (st.st_mtime_ns, st.st_size, dirty, f'{st.st_dev}:{st.st_ino}', track['id']))
                     self.store.log('write' if disk else 'database', track['id'], after=changes)
                     progress({'processed': track_index + 1, 'total': len(tracks)})
@@ -665,12 +708,11 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
     def restore_backup(self):
         path, _ = QFileDialog.getOpenFileName(self, tr('Restore backup'), '', 'ZIP (*.zip)')
         if path:
-            def action():
-                manifest = backup.inspect(path)
+            def action(manifest):
                 summary = tr('Replace current library? A safety backup will be created. Audio files are not restored.') + '\n\n' + json.dumps(manifest, indent=2)
                 if self.preview('Restore backup', summary):
                     self.start(lambda cancel, progress: backup.restore(self.store, path, cancel, progress), lambda _: self.refresh(), lock_playback=True)
-            self.guarded(action)
+            self.start(lambda cancel, progress: backup.inspect(path, cancel), action)
 
     def navigate(self, index):
         if self.worker:
@@ -712,6 +754,17 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         hashes = QCheckBox(tr('Calculate SHA-256 (slower scans)'))
         hashes.setChecked(self.store.setting('hashes', False))
         layout.addRow(hashes)
+        playback_settings = {}
+        for key, label in [('skip_unavailable', 'Skip missing or corrupt tracks'), ('autoplay_session', 'Automatically play restored session'), ('watch_folders', 'Monitor music folders')]:
+            control = QCheckBox(tr(label))
+            control.setChecked(bool(self.store.setting(key, False)))
+            playback_settings[key] = control
+            layout.addRow(control)
+        gain = QComboBox()
+        for label, key in [('Off', 'off'), ('Track', 'track'), ('Album', 'album')]:
+            gain.addItem(tr(label), key)
+        gain.setCurrentIndex(max(0, gain.findData(self.store.setting('replaygain', 'off'))))
+        layout.addRow(tr('ReplayGain normalization'), gain)
         layout.addRow(QLabel(tr('Metadata: MusicBrainz. Covers: Cover Art Archive. Verify rights before redistribution.')))
         buttons = QDialogButtonBox()
         buttons.addButton(tr('Save'), QDialogButtonBox.AcceptRole)
@@ -721,6 +774,9 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         layout.addRow(buttons)
         if dialog.exec() == QDialog.Accepted:
             self.save_layout()
+            for key, control in playback_settings.items():
+                self.store.set_setting(key, control.isChecked())
+            self.store.set_setting('replaygain', gain.currentData())
             for key, value in [('language', language.currentData()), ('theme', theme.currentData()), ('contact', contact.text().strip()), ('hashes', hashes.isChecked())]:
                 self.store.set_setting(key, value)
             QApplication.instance().removeTranslator(self.translator)
@@ -733,6 +789,7 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
             self.apply_theme(theme.currentData())
             self.restore_layout()
             self.refresh()
+            self.restore_playback_session()
 
     def undo(self):
         if self.worker:
@@ -794,7 +851,11 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         dialog.exec()
 
     def shutdown(self):
+        if not self.closing:
+            self.playback.save_session()
         self.closing = True
+        if hasattr(self, 'folder_monitor'):
+            self.folder_monitor.stop()
         self.query_generation += 1
         if self.worker:
             self.worker.cancel.set()
@@ -804,7 +865,11 @@ class MainWindow(CoverViews, PlaylistImportViews, HelpViews, LibraryViews, QMain
         self.playback.release()
 
     def closeEvent(self, event):
+        if not self.closing:
+            self.playback.save_session()
         self.save_layout()
+        if hasattr(self, 'folder_monitor'):
+            self.folder_monitor.stop()
         self.playback.release()
         if self.worker:
             self.closing = True

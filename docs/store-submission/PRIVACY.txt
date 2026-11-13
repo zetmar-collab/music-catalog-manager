@@ -1,0 +1,20 @@
+Music Catalog Manager — Privacy Policy
+Publisher: Marek Zettel - zetmar
+Effective date: 28 October 2026
+
+Music Catalog Manager is a desktop application for organizing and playing music files selected by the user. It does not require an account and contains no advertising or in-app purchases.
+
+Local data
+The app processes selected audio files, file paths, tags, album artwork and playlists. Its catalog, edit history, preferences, backups, cached images and cached service responses are stored locally on the user's computer. Files are modified only through the app's editing and file-management functions. The app does not upload audio recordings to the publisher or to the metadata services. It does not contain an analytics SDK or automatically send crash reports to the publisher.
+
+Optional internet features
+When the user requests online metadata or album-cover searches, relevant search terms (such as artist, album or track title) and recording/release identifiers are sent to MusicBrainz and Cover Art Archive or their content-delivery services. These services also receive ordinary connection data, including the IP address and a User-Agent identifying the app and its version. A developer contact email or URL entered in Settings is included in that User-Agent and is therefore transmitted with these requests. Cover search can use the project's built-in contact URL. Users can use local cataloging and playback without these optional services. External services process requests under their own privacy policies and retention practices; the publisher does not control their logs.
+
+Control and retention
+Local data remains on the computer until removed by the user or operating system. The app can remove a registered folder or clear catalog records, creating a safety backup first. These operations preserve preferences and do not erase music files, cached image files or backup files. Users may manage remaining files and backups themselves. Catalog exports and backups contain library information, so users should share them only with intended recipients. Windows and Microsoft Store may separately process installation, diagnostic or backup data according to Microsoft's settings and policies.
+
+Contact
+For support and privacy questions, contact the publisher through https://github.com/zetmar-collab/music-catalog-manager/issues. Issues are public: do not post private files, personal information, or logs containing sensitive paths. Information voluntarily submitted in a support request is used to address that request and is also processed by GitHub under its policies.
+
+Changes
+If app data practices change, this policy will be updated with a new effective date.

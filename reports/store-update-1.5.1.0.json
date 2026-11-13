@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-04",
+  "product": "Music Catalog Manager",
+  "store_id": "9P44BDRDZFJX",
+  "package_version": "1.5.1.0",
+  "status": "In certification",
+  "phase": "Pre-processing",
+  "submission_id": "1152921505702311753",
+  "submission_number": 2,
+  "submitted": true,
+  "price": "Free (0 PLN base price, all worldwide markets)",
+  "release_notes_saved": true,
+  "certification_notes_saved": true,
+  "publish_after_certification": true,
+  "release_notes_prepared": [
+    "pl-PL",
+    "en-US"
+  ],
+  "certification_notes": "docs/store-submission/CERTIFICATION-NOTES-1.5.1.0.txt",
+  "browser_connection_error": null,
+  "partner_center_url": "https://partner.microsoft.com/en-US/dashboard/products/9P44BDRDZFJX/overview"
+}

@@ -10,3 +10,12 @@ reports/*.log
 reports/*.png
 reports/dll-diagnostic.txt
 Music_Catalog_Manager_specyfikacja_GPT_Sol_6_1.md
+
+.playwright-cli/
+
+.playwright/
+
+output/playwright/
+.mypy_cache/
+.ruff_cache/
+src/music_catalog_manager/resources/build-info.json

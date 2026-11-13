@@ -1,8 +1,11 @@
-param([switch]$ResumeExisting, [string]$InnoCompiler = '')
+param([switch]$ResumeExisting, [string]$InnoCompiler = '', [string]$InstallTarget = '', [string]$TestProfile = '')
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$InstallTarget = Join-Path $ProjectRoot 'build\installation-acceptance-0.4.0'
-$TestProfile = Join-Path $ProjectRoot 'build\installer-test-profile-0.4.0'
+$Release = Get-Content -LiteralPath (Join-Path $ProjectRoot 'src\music_catalog_manager\resources\release.json') -Raw | ConvertFrom-Json
+$TestRun = [guid]::NewGuid().ToString('N')
+if ($ResumeExisting -and -not $InstallTarget) { throw 'Specify -InstallTarget to resume a previous test installation' }
+if (-not $InstallTarget) { $InstallTarget = Join-Path $ProjectRoot "build\installation-acceptance-$($Release.version)-$TestRun" }
+if (-not $TestProfile) { $TestProfile = Join-Path $ProjectRoot "build\installer-test-profile-$($Release.version)-$TestRun" }
 $ReportPath = Join-Path $ProjectRoot 'reports\installer-result.json'
 if ((Test-Path -LiteralPath $InstallTarget) -and -not $ResumeExisting) { throw 'Test installation destination already exists; choose a fresh test directory' }
 $SetupExe = Join-Path $ProjectRoot 'build\MusicCatalogManager-Acceptance-Setup.exe'
@@ -14,7 +17,7 @@ if (-not $ResumeExisting) {
     $SetupProcess.Refresh()
     if ($SetupProcess.ExitCode -ne 0) { throw 'Installer failed' }
 }
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Music Catalog Manager Acceptance Test 0.4.0\Music Catalog Manager.lnk'
+$ShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) "Programs\Music Catalog Manager Acceptance Test $($Release.version)\Music Catalog Manager.lnk"
 if (-not (Test-Path -LiteralPath $ShortcutPath)) { throw 'Start Menu shortcut missing' }
 $Shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($ShortcutPath)
 if ($Shortcut.TargetPath -ne (Join-Path $InstallTarget 'MusicCatalogManager.exe')) { throw 'Wrong shortcut target' }

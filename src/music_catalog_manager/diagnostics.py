@@ -62,6 +62,7 @@ def verify_playback(source):
             raise RuntimeError(bar.last_error)
         output = QAudioBufferOutput(bar.player)
         bar.player.setAudioBufferOutput(output)
+        bar.player.setAudioOutput(None)
         for track in store.tracks():
             report = {'format': track['format'], 'decoded_samples': 0, 'ended': False, 'errors': []}
             loop = QEventLoop()
@@ -90,8 +91,37 @@ def verify_playback(source):
             bar.player.mediaStatusChanged.disconnect(status_changed)
             bar.player.errorOccurred.disconnect(failed)
             bar.stop()
+        # Exercise natural transitions too, including two consecutive entries
+        # for the same source. This runs in the frozen EXE acceptance check.
+        tracks = store.tracks()
+        queue_report = {'ended_indices': [], 'errors': [], 'passed': False}
+        if tracks:
+            queue = [tracks[0], *tracks]
+            loop = QEventLoop()
+            def queue_status(status):
+                if status == QMediaPlayer.MediaStatus.EndOfMedia:
+                    queue_report['ended_indices'].append(bar.current)
+                    if bar.current == len(queue) - 1:
+                        loop.quit()
+            def queue_error(error, detail):
+                queue_report['errors'].append(detail)
+                loop.quit()
+            bar.player.mediaStatusChanged.connect(queue_status)
+            bar.player.errorOccurred.connect(queue_error)
+            timeout = QTimer()
+            timeout.setSingleShot(True)
+            timeout.timeout.connect(loop.quit)
+            timeout.start(10000)
+            bar.set_queue(queue)
+            loop.exec()
+            timeout.stop()
+            queue_report['passed'] = (queue_report['ended_indices'] == list(range(len(queue)))
+                                      and not queue_report['errors'])
+            bar.player.mediaStatusChanged.disconnect(queue_status)
+            bar.player.errorOccurred.disconnect(queue_error)
         bar.release()
         # Deferred deletion belongs to the caller's event loop. Waiting in a
         # nested loop here deadlocks when this diagnostic runs from a QTimer.
         bar.when_released(bar.deleteLater)
-    return {'passed': bool(reports) and all(r['passed'] for r in reports), 'formats': reports, 'audible_output_verified': False}
+    return {'passed': bool(reports) and all(r['passed'] for r in reports) and queue_report['passed'],
+            'formats': reports, 'queue': queue_report, 'audible_output_verified': False}

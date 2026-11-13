@@ -1,5 +1,7 @@
 from pathlib import Path
 import random
+from copy import deepcopy
+from itertools import chain
 
 from PySide6.QtCore import QCoreApplication, Qt, QUrl, QTimer
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
@@ -18,9 +20,16 @@ def timestamp(milliseconds):
 class PlaybackBar(QWidget):
     """Plays local paths from catalog records; never writes to audio files."""
 
-    def __init__(self, store, selected, visible, parent=None):
+    def __init__(self, store, selected, visible, parent=None, context=None):
         super().__init__(parent)
         self.store, self.selected, self.visible = store, selected, visible
+        self.context = context
+        self.queue_context = None
+        self.request_queue = None
+        self.failed_entries = set()
+        self.skipped = []
+        self.pending_position = 0
+        self.gain = 1.0
         self.player = self.output = None
         self.queue = []
         self.current = -1
@@ -28,6 +37,12 @@ class PlaybackBar(QWidget):
         self.last_error = ''
         self.retiring = 0
         self.release_callbacks = []
+        self.playback_generation = 0
+        self.end_player = None
+        self.end_generation = None
+        self.end_timer = QTimer(self)
+        self.end_timer.setSingleShot(True)
+        self.end_timer.timeout.connect(self.finish_track)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 6, 0, 0)
         self.now_playing = QLabel(tr('No track playing'))
@@ -108,8 +123,12 @@ class PlaybackBar(QWidget):
         if self.busy:
             return
         selected = self.selected()
+        if self.request_queue:
+            self.request_queue(selected if len(selected) > 1 else None, track['id'])
+            return
         # Multiple selected tracks form a queue; one track starts the visible list.
         self.queue = selected if len(selected) > 1 else self.visible()
+        self.queue_context = deepcopy(self.context()) if self.context else None
         self.current = next((i for i, item in enumerate(self.queue) if item['id'] == track['id']), -1)
         if self.current < 0:
             self.queue, self.current = [track], 0
@@ -120,14 +139,70 @@ class PlaybackBar(QWidget):
             self.current = 0
         self.play_current()
 
-    def set_queue(self, tracks):
+    def set_queue(self, tracks, start_id=None):
         if self.busy or not tracks:
             return
         self.queue = list(tracks)
+        self.failed_entries.clear()
+        self.pending_position = 0
+        self.queue_context = deepcopy(self.context()) if self.context else None
+        self.current = next((i for i, item in enumerate(self.queue) if item['id'] == start_id), 0)
         if self.shuffle.isChecked():
-            random.shuffle(self.queue)
-        self.current = 0
+            if start_id is not None:
+                chosen = self.queue.pop(self.current)
+                random.shuffle(self.queue)
+                self.queue.insert(0, chosen)
+            else:
+                random.shuffle(self.queue)
+            self.current = 0
         self.play_current()
+
+    def enqueue(self, tracks, next_up=False):
+        if self.busy or not tracks:
+            return
+        at = self.current + 1 if next_up and self.current >= 0 else len(self.queue)
+        self.queue[at:at] = list(tracks)
+        if self.current < 0:
+            self.current = 0
+        self.failed_entries.clear()
+        self.update_controls()
+
+    def save_session(self):
+        from music_catalog_manager.services import session
+        session.save(self.store, self.queue, self.current,
+                     self.player.position() if self.player else self.pending_position, self.queue_context)
+
+    def restore_session(self, result):
+        self.queue, self.current, self.pending_position, self.queue_context = result
+        self.failed_entries.clear()
+        if self.queue:
+            self.now_playing.setText(tr('Session restored. Press Play to continue.'))
+            if self.store.setting('autoplay_session', False):
+                self.play_current()
+        self.update_controls()
+
+    def skip_failed(self, reason):
+        if not self.store.setting('skip_unavailable', False):
+            return False
+        index = self.current
+        self.failed_entries.add(index)
+        self.skipped.append(dict(path=self.queue[index]['path'], reason=reason))
+        self.skipped = self.skipped[-200:]
+        self.store.log('playback_skip', self.queue[index]['id'], after=reason)
+        following = chain(range(index + 1, len(self.queue)), range(index) if self.repeat.currentData() == 'all' else ())
+        target = next((i for i in following if i not in self.failed_entries), None)
+        self.show_error('Skipped unavailable track.', reason)
+        if target is None:
+            if self.player:
+                self.player.stop()
+        else:
+            generation = self.playback_generation
+            def advance():
+                if generation == self.playback_generation and not self.busy:
+                    self.current = target
+                    self.play_current()
+            QTimer.singleShot(0, advance)
+        return True
 
     def shuffle_changed(self, enabled):
         self.store.set_setting('shuffle', enabled)
@@ -165,6 +240,7 @@ class PlaybackBar(QWidget):
             current_track = self.queue[self.current] if 0 <= self.current < len(self.queue) else None
             indices = [view.item(i).data(Qt.UserRole) for i in range(view.count())]
             self.queue = [original[i] for i in indices]
+            self.failed_entries.clear()
             self.current = next((i for i, track in enumerate(self.queue) if track is current_track), -1)
             if self.current < 0:
                 remaining = self.queue
@@ -174,6 +250,7 @@ class PlaybackBar(QWidget):
             self.update_controls()
 
     def play_current(self):
+        self.cancel_advance()
         if self.busy or not 0 <= self.current < len(self.queue):
             return
         record = self.queue[self.current]
@@ -181,16 +258,23 @@ class PlaybackBar(QWidget):
         try:
             record = self.store.track(record['id'])
         except KeyError:
+            if self.skip_failed('Track removed from catalog'):
+                return
             self.show_error('This track is no longer in the library.')
             return
         path = Path(record['path'])
         if not path.is_file():
+            if self.skip_failed(str(path)):
+                return
             self.release()
             self.show_error('The audio file is unavailable.', str(path))
             return
         if not self.ensure_player():
             return
         self.last_error = ''
+        from music_catalog_manager.services.replaygain import multiplier
+        self.gain = multiplier(record['tags'], self.store.setting('replaygain', 'off'))
+        self.set_volume(self.volume.value())
         title = record['tags'].get('title') or path.name
         artist = record['tags'].get('artist')
         self.now_playing.setText((artist + ' — ' if artist else '') + title)
@@ -203,8 +287,21 @@ class PlaybackBar(QWidget):
         if self.busy:
             return
         chosen = self.selected()
+        if self.context and self.context() != self.queue_context:
+            if self.request_queue:
+                self.request_queue(chosen if len(chosen) > 1 else None, chosen[0]['id'] if chosen else None)
+                return
+            tracks = self.visible()
+            ids = {track['id'] for track in tracks}
+            chosen = [track for track in chosen if track['id'] in ids]
+            if tracks:
+                self.set_queue(chosen if len(chosen) > 1 else tracks, chosen[0]['id'] if chosen else None)
+            else:
+                self.release()
+            return
         if self.player and not self.player.source().isEmpty():
             if self.player.playbackState() == self.player.PlaybackState.PlayingState:
+                self.cancel_advance()
                 self.player.pause()
             else:
                 self.player.play()
@@ -215,12 +312,14 @@ class PlaybackBar(QWidget):
         self.update_controls()
 
     def stop(self):
+        self.cancel_advance()
         if self.player:
             self.player.stop()
         self.position_changed(0)
         self.update_controls()
 
     def release(self):
+        self.cancel_advance()
         if self.volume_timer.isActive():
             self.volume_timer.stop()
             self.store.set_setting('volume', self.volume.value())
@@ -260,11 +359,13 @@ class PlaybackBar(QWidget):
         self.update_controls()
 
     def previous(self):
+        self.cancel_advance()
         if not self.busy and self.current > 0:
             self.current -= 1
             self.play_current()
 
     def next(self):
+        self.cancel_advance()
         if not self.busy and self.current + 1 < len(self.queue):
             self.current += 1
             self.play_current()
@@ -273,16 +374,38 @@ class PlaybackBar(QWidget):
             self.play_current()
 
     def media_status(self, status):
-        if self.player and status == self.player.MediaStatus.EndOfMedia:
-            if self.repeat.currentData() == 'one':
-                self.player.setPosition(0)
-                self.player.play()
-            else:
-                self.next()
+        if self.player and self.pending_position and status in (self.player.MediaStatus.LoadedMedia, self.player.MediaStatus.BufferedMedia):
+            position, self.pending_position = self.pending_position, 0
+            self.player.setPosition(position)
+        if self.player and status == self.player.MediaStatus.EndOfMedia and not self.end_timer.isActive():
+            # Finish the backend's EndOfMedia dispatch before changing its source.
+            self.end_player = self.player
+            self.end_generation = self.playback_generation
+            self.end_timer.start(0)
         self.update_controls()
+
+    def cancel_advance(self):
+        self.end_timer.stop()
+        self.playback_generation += 1
+        self.end_player = None
+
+    def finish_track(self):
+        if (self.busy or self.player is None or self.player is not self.end_player
+                or self.end_generation != self.playback_generation
+                or self.player.mediaStatus() != self.player.MediaStatus.EndOfMedia):
+            return
+        self.cancel_advance()
+        if self.repeat.currentData() == 'one':
+            self.player.setPosition(0)
+            self.player.play()
+        else:
+            self.next()
 
     def media_error(self, error, detail):
         if self.player and error != self.player.Error.NoError:
+            self.cancel_advance()
+            if self.queue and self.skip_failed(detail):
+                return
             self.show_error('Cannot play this file. Check its availability and format.', detail)
 
     def show_error(self, message, detail=''):
@@ -293,7 +416,7 @@ class PlaybackBar(QWidget):
 
     def set_volume(self, value):
         if self.output:
-            self.output.setVolume(value / 100)
+            self.output.setVolume(min(1.0, max(0.0, value / 100 * self.gain)))
         self.volume_timer.start()
 
     def seek_to(self, position):
@@ -312,7 +435,8 @@ class PlaybackBar(QWidget):
 
     def update_controls(self, *_):
         loaded = self.player is not None and not self.player.source().isEmpty()
-        playing = loaded and self.player.playbackState() == self.player.PlaybackState.PlayingState
+        same_context = self.context is None or self.context() == self.queue_context
+        playing = loaded and same_context and self.player.playbackState() == self.player.PlaybackState.PlayingState
         self.play_button.setText(tr('Pause') if playing else tr('Play'))
         self.play_button.setAccessibleName(self.play_button.text())
         self.play_button.setEnabled(not self.busy)

@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "packages": [
+    {
+      "file": "dist\\MSIX-1.6.0.0\\MusicCatalogManager-1.6.0.0-x64-Store-unsigned.msix",
+      "signed": false,
+      "version": "1.6.0.0",
+      "payload_matches_exe": true,
+      "source_matches": true
+    },
+    {
+      "file": "dist\\MSIX-1.6.0.0\\MusicCatalogManager-1.6.0.0-x64-Test-signed.msix",
+      "signed": true,
+      "version": "1.6.0.0",
+      "payload_matches_exe": true,
+      "source_matches": true
+    }
+  ],
+  "makeappx_validated": true,
+  "signtool_verified": true,
+  "existing_store_installation_preserved": true,
+  "installed_store_version": "1.5.1.0",
+  "installed_new_msix": false,
+  "wack_executed": false,
+  "reason": "Existing Store application preserved; no isolated Windows VM available"
+}

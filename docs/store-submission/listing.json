@@ -1,0 +1,50 @@
+{
+  "en-US": {
+    "short": "Organize local music with a searchable catalog, player, tag editor, playlists and album covers.",
+    "description": "Music Catalog Manager helps you organize your own music collection on your PC. Add folders of audio files, search your library and filter tracks by artist, album, genre, format or folder. Group tracks by playlist and listen using the built-in audio player.\n\nEdit tags individually or in batches. Import playlists from a folder and its subfolders, and export M3U playlists. Find album covers by artist and album using MusicBrainz and Cover Art Archive, or add your own images from disk.\n\nBack up and restore your catalog. Remove one registered folder or clear the entire catalog while keeping your music files on disk. The app creates a safety backup before either removal operation.\n\nThe app is free, requires no account, and includes Polish and English interfaces and offline help. Cataloging and local playback work offline. Internet access is needed for optional metadata and cover searches. The app does not provide or download music recordings.\n\nSupported audio formats: MP3, FLAC, M4A, OGG, OPUS, WAV, WMA and AIFF. Requires Windows 10 version 2004 or later, or Windows 11, on an x64 PC.",
+    "features": [
+      "Catalog music folders and search your local library.",
+      "Filter and group by album, artist, folder and playlist.",
+      "Built-in audio player with queue, shuffle and repeat.",
+      "Edit tags for individual tracks or selected batches.",
+      "Import M3U, M3U8, PLS, WPL and XSPF playlists, including subfolders.",
+      "Search online for album covers or choose an image from disk.",
+      "Catalog backups and safe removal of folders or the entire library.",
+      "Polish and English interface and offline help."
+    ],
+    "keywords": [
+      "music catalog",
+      "music player",
+      "tag editor",
+      "playlists",
+      "album covers",
+      "music library",
+      "MP3 FLAC"
+    ],
+    "release": "Fixed continuous playback of albums and folders. Changing the library view now builds the correct queue across all table pages and automatically advances to the next track. Improved end-of-track transitions, repeat modes and consecutive queue entries for the same file."
+  },
+  "pl-PL": {
+    "short": "Uporządkuj muzykę na komputerze: katalog, odtwarzacz, tagi, playlisty i okładki albumów.",
+    "description": "Music Catalog Manager pomaga uporządkować własną kolekcję muzyki na komputerze. Dodaj foldery z plikami audio, przeszukuj bibliotekę i filtruj utwory według wykonawcy, albumu, gatunku, formatu lub folderu. Grupuj nagrania także według playlisty i słuchaj ich we wbudowanym odtwarzaczu.\n\nEdytuj tagi pojedynczo lub zbiorczo. Importuj playlisty z folderu głównego i podfolderów oraz eksportuj listy M3U. Wyszukuj okładki według wykonawcy i albumu w MusicBrainz i Cover Art Archive albo dodawaj własne obrazy z dysku.\n\nTwórz kopie katalogu i przywracaj zapisane dane. Możesz usunąć z katalogu jeden folder lub wyczyścić całą bibliotekę, pozostawiając pliki muzyczne na dysku. Przed tymi operacjami program tworzy kopię bezpieczeństwa.\n\nAplikacja jest bezpłatna, nie wymaga konta i zawiera interfejs oraz pomoc po polsku i po angielsku. Katalogowanie i odtwarzanie lokalnej muzyki działają offline. Internet jest potrzebny do opcjonalnego wyszukiwania metadanych i okładek. Program nie dostarcza ani nie pobiera nagrań muzycznych.\n\nObsługiwane formaty audio: MP3, FLAC, M4A, OGG, OPUS, WAV, WMA i AIFF. Przeznaczona dla Windows 10 w wersji 2004 lub nowszej oraz Windows 11, na komputerach x64.",
+    "features": [
+      "Katalogowanie folderów z muzyką i przeszukiwanie biblioteki.",
+      "Filtrowanie i grupowanie według albumu, wykonawcy, folderu i playlisty.",
+      "Wbudowany odtwarzacz z kolejką, losowaniem i powtarzaniem.",
+      "Edycja tagów pojedynczych utworów i zaznaczonej grupy plików.",
+      "Import M3U, M3U8, PLS, WPL i XSPF, również z podfolderów.",
+      "Wyszukiwanie okładek online oraz dodawanie obrazu z dysku.",
+      "Kopie katalogu oraz usuwanie folderu lub całej biblioteki z kopią bezpieczeństwa.",
+      "Interfejs i pomoc offline w języku polskim i angielskim."
+    ],
+    "keywords": [
+      "katalog muzyki",
+      "odtwarzacz muzyki",
+      "edytor tagów",
+      "playlisty",
+      "okładki albumów",
+      "biblioteka muzyczna",
+      "MP3 FLAC"
+    ],
+    "release": "Poprawiono ciągłe odtwarzanie albumów i folderów. Po zmianie widoku program tworzy właściwą kolejkę, uwzględniając wszystkie strony tabeli, i automatycznie przechodzi do następnego utworu. Usprawniono przejścia na końcu nagrania, powtarzanie oraz obsługę kolejnych wpisów tego samego pliku."
+  }
+}

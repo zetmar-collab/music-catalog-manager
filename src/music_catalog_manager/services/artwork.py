@@ -1,5 +1,7 @@
 import hashlib
 import io
+import os
+import tempfile
 from pathlib import Path
 
 from PIL import Image
@@ -33,7 +35,19 @@ def cache_image(store, track_id, data, source='embedded', release_id=None):
 
 def folder_image(audio_path, data, overwrite=False):
     path = Path(audio_path).parent / 'folder.jpg'
-    mode = 'wb' if overwrite else 'xb'
-    with path.open(mode) as out:
-        out.write(validate_image(data))
+    image = validate_image(data)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, suffix='.jpg')
+    try:
+        with os.fdopen(fd, 'wb') as out:
+            out.write(image)
+            out.flush()
+            os.fsync(out.fileno())
+        if overwrite:
+            os.replace(temporary, path)
+        elif os.name == 'nt':
+            os.rename(temporary, path)
+        else:
+            os.link(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return path

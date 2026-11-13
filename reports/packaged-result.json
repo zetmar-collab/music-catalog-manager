@@ -1,1 +1,1 @@
-{"window_visible": true, "version": "0.4.0", "playback_controls": true, "add_folder_label": "Dodaj folder", "schema": 2, "icon_loaded": true, "help_languages": ["pl", "en"], "playlist_grouping": true, "cover_search": true}
+{"window_visible": true, "version": "0.5.1", "playback_controls": true, "add_folder_label": "Dodaj folder", "schema": 2, "icon_loaded": true, "help_languages": ["pl", "en"], "playlist_grouping": true, "cover_search": true, "catalog_cleanup": true}

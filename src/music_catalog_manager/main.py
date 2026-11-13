@@ -57,12 +57,17 @@ def main():
                 if window.proxy.rowCount():
                     window.table.selectRow(0)
                 window.grab().save(str(args.screenshot))
+            build_info = Path(__file__).parent / 'resources' / 'build-info.json'
             (args.profile / 'smoke-result.json').write_text(json.dumps({'window_visible': window.isVisible(),
+                'build': json.loads(build_info.read_text(encoding='utf-8')) if build_info.exists() else {},
+                'smart_playlists': callable(getattr(window, 'smart_playlists_dialog', None)),
+                'portable_collection': callable(getattr(window, 'create_portable_collection', None)),
                 'version': __version__, 'playback_controls': hasattr(window, 'playback'),
                 'add_folder_label': window.action_buttons[0].text(), 'schema': 2, 'icon_loaded': not window.windowIcon().isNull(),
                 'help_languages': [lang for lang in ('pl', 'en') if help_path(lang).is_file()],
                 'playlist_grouping': window.group.count() == 5,
-                'cover_search': hasattr(window, 'cover_online_button')}), encoding='utf-8')
+                'cover_search': hasattr(window, 'cover_online_button'),
+                'catalog_cleanup': callable(getattr(window, 'clear_library_dialog', None)) and callable(getattr(window, 'remove_folder_dialog', None))}), encoding='utf-8')
             app.quit()
         QTimer.singleShot(1500, smoke)
     return app.exec()

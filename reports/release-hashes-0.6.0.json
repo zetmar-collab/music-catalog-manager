@@ -1,0 +1,27 @@
+[
+  {
+    "file": "dist/MusicCatalogManager-0.6.0-Setup.exe",
+    "bytes": 48028269,
+    "sha256": "1e9d5e708ee9a00808202be04b0acaff28ea4bf762eb5ceca71fe452d2afc533"
+  },
+  {
+    "file": "dist/MusicCatalogManager-0.6.0-portable.zip",
+    "bytes": 67283231,
+    "sha256": "044411c3322a9de0d129422a0ac762684f6bf6ecc6115f4c82c2091b90d63402"
+  },
+  {
+    "file": "dist/MusicCatalogManager-0.6.0-source.zip",
+    "bytes": 1021378,
+    "sha256": "7ab17122d724a0ec5462335598314c7c9a07425cd8e3e9a7cc54e88ea6e54157"
+  },
+  {
+    "file": "dist/MSIX-1.6.0.0/MusicCatalogManager-1.6.0.0-x64-Store-unsigned.msix",
+    "bytes": 69666954,
+    "sha256": "6463f290cec7e81bb27ed9f3e7e4fc8d47ac94a68c374e2a4caf8f10bbc7d2f7"
+  },
+  {
+    "file": "dist/MSIX-1.6.0.0/MusicCatalogManager-1.6.0.0-x64-Test-signed.msix",
+    "bytes": 69668376,
+    "sha256": "c7fb3a1982bd4d2b41725f1c496a2119b51fb3cf76e9b8dca9f88272626380f1"
+  }
+]
