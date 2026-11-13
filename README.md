@@ -4,15 +4,17 @@ Lokalny katalog muzyki z odtwarzaczem dla Windows 10/11 x64, Python 3.12 i Qt/Py
 
 ## Pliki wydania
 
-Wydanie opublikowane na GitHubie: 0.4.0, Windows 10/11 x64. Lokalna wersja rozwojowa: 0.6.0. Instrukcja nowych funkcji PL/EN: [docs/FEATURES-0.6.0.md](docs/FEATURES-0.6.0.md).
+Aktualne wydanie: **0.6.0**, Windows 10/11 x64. Instrukcja nowych funkcji PL/EN: [docs/FEATURES-0.6.0.md](docs/FEATURES-0.6.0.md).
 
-- [Instalator Windows 0.4.0](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-Setup.exe)
-- [Wersja przenośna ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-portable.zip)
-- [Kod źródłowy ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-source.zip)
-- [Pomoc PL](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-Help-PL.html) · [Help EN](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.4.0/MusicCatalogManager-0.4.0-Help-EN.html)
-- [Wydanie i sumy SHA-256](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.4.0)
+- [Instalator Windows 0.6.0](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.6.0/MusicCatalogManager-0.6.0-Setup.exe)
+- [Wersja przenośna ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.6.0/MusicCatalogManager-0.6.0-portable.zip)
+- [Kod źródłowy ZIP](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.6.0/MusicCatalogManager-0.6.0-source.zip)
+- [Pomoc PL](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.6.0/MusicCatalogManager-0.6.0-help-pl.html) · [Help EN](https://github.com/zetmar-collab/music-catalog-manager/releases/download/v0.6.0/MusicCatalogManager-0.6.0-help-en.html)
+- [Wydanie, MSIX i sumy SHA-256](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.6.0)
 
-Archiwalne wydania: [0.2.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.2.0), [0.1.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.1.0).
+Archiwalne wydania: [0.4.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.4.0), [0.2.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.2.0), [0.1.0](https://github.com/zetmar-collab/music-catalog-manager/releases/tag/v0.1.0).
+
+Aktualizacja Microsoft Store 1.6.0.0 została wysłana 13 listopada 2026 r.; przy wysyłaniu Partner Center potwierdził status **In certification / Pre-processing**. [Zapis zgłoszenia](reports/store-update-1.6.0.0.json).
 
 Lokalne pakiety MSIX x64 są w `dist/MSIX-1.6.0.0`: niepodpisany do Microsoft Store i podpisany do testów. Wersja pakietu 1.6.0.0 zawiera aplikację 0.6.0. [Instrukcja MSIX i dane tożsamości](docs/MSIX.md) opisuje budowanie, certyfikat, instalację testową i dalszą walidację WACK.
 
