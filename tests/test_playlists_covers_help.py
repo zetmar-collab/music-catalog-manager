@@ -113,7 +113,9 @@ def test_import_reports_invalid_and_missing_and_cancel_keeps_completed(store, mu
         playlists.discover(root, cancel)
 
 
-def test_playlist_legacy_encodings_and_xml_entities(store, music):
+def test_playlist_legacy_encodings_and_xml_entities(store, music, monkeypatch):
+    # Legacy M3U uses the Windows ANSI code page, which differs on CI runners.
+    monkeypatch.setattr(playlists.locale, 'getencoding', lambda: 'cp1250')
     root, paths, rows = music
     legacy = root / 'legacy.m3u'
     legacy.write_bytes('Łódź.wav'.encode('cp1250'))
